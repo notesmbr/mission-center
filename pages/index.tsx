@@ -26,6 +26,9 @@ interface UsageData {
     totalRequests: number
     totalTokensUsed: number
     avgCostPerRequest: number
+    monthlyBudget?: number
+    remainingBudget?: number
+    percentUsed?: number
   }
   recommendations: Array<{
     priority: 'high' | 'medium' | 'low'
@@ -197,7 +200,7 @@ export default function Home() {
             <div className="space-y-6">
               <BudgetAnalysis
                 monthlySpend={usageData.summary.totalCostUSD}
-                monthlyBudget={500}
+                monthlyBudget={usageData.summary.monthlyBudget || 100}
                 recommendations={usageData.recommendations}
               />
 

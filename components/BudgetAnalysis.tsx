@@ -13,7 +13,7 @@ interface BudgetAnalysisProps {
 export default function BudgetAnalysis({
   recommendations,
   monthlySpend,
-  monthlyBudget = 500,
+  monthlyBudget = 100,
 }: BudgetAnalysisProps) {
   const remaining = monthlyBudget - monthlySpend
   const percentUsed = (monthlySpend / monthlyBudget) * 100
