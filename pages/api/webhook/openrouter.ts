@@ -37,70 +37,122 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
   }
 
   try {
-    const webhook = req.body
+    const payload = req.body
 
-    // Validate webhook has required fields
-    if (!webhook.type || !webhook.data) {
-      return res.status(400).json({ error: 'Invalid webhook format' })
+    // Handle OpenTelemetry format (OTEL traces from OpenRouter)
+    if (payload.resourceSpans) {
+      const usageData = readUsageData()
+      const now = new Date().toISOString()
+      let processed = 0
+
+      // Extract spans from OTEL format
+      payload.resourceSpans.forEach((resourceSpan: any) => {
+        resourceSpan.scopeSpans?.forEach((scopeSpan: any) => {
+          scopeSpan.spans?.forEach((span: any) => {
+            // Extract attributes from the span
+            const attrs: Record<string, any> = {}
+            span.attributes?.forEach((attr: any) => {
+              const key = attr.key
+              const value =
+                attr.value.stringValue ||
+                attr.value.intValue ||
+                attr.value.doubleValue ||
+                attr.value.boolValue
+              attrs[key] = value
+            })
+
+            // Extract model and token usage
+            const model = attrs['gen_ai.request.model'] || 'unknown'
+            const promptTokens = parseInt(attrs['gen_ai.usage.prompt_tokens'] || '0')
+            const completionTokens = parseInt(attrs['gen_ai.usage.completion_tokens'] || '0')
+            const totalTokens = promptTokens + completionTokens
+
+            if (!usageData.models[model]) {
+              usageData.models[model] = {
+                name: model,
+                costUSD: 0,
+                requests: 0,
+                tokensUsed: 0,
+              }
+            }
+
+            usageData.models[model].requests += 1
+            usageData.models[model].tokensUsed += totalTokens
+            usageData.lastUpdate = now
+            processed++
+          })
+        })
+      })
+
+      writeUsageData(usageData)
+
+      return res.status(200).json({
+        status: 'recorded',
+        spansProcessed: processed,
+        totalCost: usageData.totalCost,
+      })
     }
 
-    const usageData = readUsageData()
-    const now = new Date().toISOString()
+    // Handle simple JSON format (fallback)
+    if (req.body.type && req.body.data) {
+      const webhook = req.body
+      const usageData = readUsageData()
+      const now = new Date().toISOString()
 
-    // Handle different webhook types
-    switch (webhook.type) {
-      case 'usage':
-      case 'inference_request':
-        // Update model usage
-        const model = webhook.data.model || 'unknown'
-        const cost = webhook.data.cost || webhook.data.total_cost || 0
+      switch (webhook.type) {
+        case 'usage':
+        case 'inference_request':
+          const model = webhook.data.model || 'unknown'
+          const cost = webhook.data.cost || webhook.data.total_cost || 0
 
-        if (!usageData.models[model]) {
-          usageData.models[model] = {
-            name: model,
-            costUSD: 0,
-            requests: 0,
-            tokensUsed: 0,
+          if (!usageData.models[model]) {
+            usageData.models[model] = {
+              name: model,
+              costUSD: 0,
+              requests: 0,
+              tokensUsed: 0,
+            }
           }
-        }
 
-        usageData.models[model].costUSD += cost
-        usageData.models[model].requests += 1
-        usageData.models[model].tokensUsed += webhook.data.tokens_used || 0
-        usageData.totalCost += cost
-        usageData.lastUpdate = now
+          usageData.models[model].costUSD += cost
+          usageData.models[model].requests += 1
+          usageData.models[model].tokensUsed += webhook.data.tokens_used || 0
+          usageData.totalCost += cost
+          usageData.lastUpdate = now
 
-        writeUsageData(usageData)
+          writeUsageData(usageData)
 
-        return res.status(200).json({ 
-          status: 'recorded',
-          model,
-          cost,
-          totalCost: usageData.totalCost 
-        })
+          return res.status(200).json({
+            status: 'recorded',
+            model,
+            cost,
+            totalCost: usageData.totalCost,
+          })
 
-      case 'billing_summary':
-        // Update monthly billing
-        usageData.totalCost = webhook.data.total_cost || 0
-        usageData.period = webhook.data.period
-        usageData.lastUpdate = now
+        case 'billing_summary':
+          usageData.totalCost = webhook.data.total_cost || 0
+          usageData.period = webhook.data.period
+          usageData.lastUpdate = now
 
-        if (webhook.data.models) {
-          usageData.models = webhook.data.models
-        }
+          if (webhook.data.models) {
+            usageData.models = webhook.data.models
+          }
 
-        writeUsageData(usageData)
+          writeUsageData(usageData)
 
-        return res.status(200).json({ 
-          status: 'updated',
-          totalCost: usageData.totalCost 
-        })
+          return res.status(200).json({
+            status: 'updated',
+            totalCost: usageData.totalCost,
+          })
 
-      default:
-        return res.status(200).json({ status: 'ignored', type: webhook.type })
+        default:
+          return res.status(200).json({ status: 'ignored', type: webhook.type })
+      }
     }
+
+    return res.status(400).json({ error: 'Unknown webhook format' })
   } catch (error) {
     console.error('Webhook error:', error)
-    return res.status(500).json({ error: 'Failed to process webhook' })
+    return res.status(500).json({ error: 'Failed to process webhook', details: String(error) })
   }
 }
