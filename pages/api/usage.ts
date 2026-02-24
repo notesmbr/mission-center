@@ -10,8 +10,11 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
     // Fetch real usage data from OpenRouter
     const response = await fetch('https://openrouter.ai/api/v1/auth/key', {
+      method: 'GET',
       headers: {
-        Authorization: `Bearer ${apiKey}`,
+        'Authorization': `Bearer ${apiKey}`,
+        'HTTP-Referer': 'https://mission-center.local',
+        'X-Title': 'Mission Center',
       },
     })
 
