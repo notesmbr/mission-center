@@ -8,7 +8,7 @@ import BudgetAnalysis from '../components/BudgetAnalysis'
 
 interface StatusData {
   openclaw: { status: string; uptime: string; lastHeartbeat: string }
-  agents: Array<{ id: string; name: string; model: string; status: string; tasksCompleted: number }>
+  agents: Array<{ id: string; name: string; model: string; status: 'active' | 'idle' | 'error'; tasksCompleted: number }>
 }
 
 interface UsageData {
