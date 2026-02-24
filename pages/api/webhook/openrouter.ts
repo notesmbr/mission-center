@@ -30,6 +30,27 @@ const writeUsageData = (data: any) => {
   fs.writeFileSync(dataFile, JSON.stringify(data, null, 2))
 }
 
+// OpenRouter pricing per 1M tokens (input/output)
+const MODEL_PRICING: Record<string, { input: number; output: number }> = {
+  'anthropic/claude-haiku-4.5': { input: 0.8, output: 4.0 },
+  'anthropic/claude-haiku-4-5': { input: 0.8, output: 4.0 },
+  'anthropic/claude-sonnet-4.6': { input: 3.0, output: 15.0 },
+  'anthropic/claude-sonnet-4-6': { input: 3.0, output: 15.0 },
+  'anthropic/claude-opus-4-6': { input: 15.0, output: 75.0 },
+  'anthropic/claude-opus-4.6': { input: 15.0, output: 75.0 },
+  'openai/gpt-4-turbo': { input: 10.0, output: 30.0 },
+  'openai/gpt-4': { input: 30.0, output: 60.0 },
+  'google/gemini-2.0-flash': { input: 0.075, output: 0.3 },
+  'google/gemini-2.0-flash-lite': { input: 0.0375, output: 0.15 },
+}
+
+const calculateCost = (model: string, promptTokens: number, completionTokens: number): number => {
+  const pricing = MODEL_PRICING[model] || { input: 0, output: 0 }
+  const inputCost = (promptTokens / 1000000) * pricing.input
+  const outputCost = (completionTokens / 1000000) * pricing.output
+  return inputCost + outputCost
+}
+
 export default async function handler(req: NextApiRequest, res: NextApiResponse) {
   // Only accept POST requests
   if (req.method !== 'POST') {
@@ -66,6 +87,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
             const promptTokens = parseInt(attrs['gen_ai.usage.prompt_tokens'] || '0')
             const completionTokens = parseInt(attrs['gen_ai.usage.completion_tokens'] || '0')
             const totalTokens = promptTokens + completionTokens
+            const cost = calculateCost(model, promptTokens, completionTokens)
 
             if (!usageData.models[model]) {
               usageData.models[model] = {
@@ -78,6 +100,8 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
 
             usageData.models[model].requests += 1
             usageData.models[model].tokensUsed += totalTokens
+            usageData.models[model].costUSD += cost
+            usageData.totalCost = (usageData.totalCost || 0) + cost
             usageData.lastUpdate = now
             processed++
           })
