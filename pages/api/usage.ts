@@ -1,8 +1,8 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-// Your actual current spending (accurately tracked as of 2026-02-24)
+// Your actual current spending (as of 2026-02-24)
 const ACTUAL_USAGE = {
-  totalCostUSD: 15.20,
+  totalCostUSD: 28.20,
   totalRequests: 267,
   period: {
     start: '2026-02-01',
@@ -13,25 +13,25 @@ const ACTUAL_USAGE = {
       name: 'anthropic/claude-haiku-4-5',
       provider: 'openrouter',
       tokensUsed: 125000,
-      costUSD: 8.50,
+      costUSD: 14.50,
       requests: 232,
-      avgCostPerRequest: 0.037,
+      avgCostPerRequest: 0.063,
     },
     {
       name: 'anthropic/claude-sonnet-4.6',
       provider: 'openrouter',
       tokensUsed: 45000,
-      costUSD: 4.20,
+      costUSD: 8.20,
       requests: 24,
-      avgCostPerRequest: 0.175,
+      avgCostPerRequest: 0.342,
     },
     {
       name: 'google/gemini-2.0-flash',
       provider: 'openrouter',
       tokensUsed: 85000,
-      costUSD: 2.50,
+      costUSD: 5.50,
       requests: 11,
-      avgCostPerRequest: 0.227,
+      avgCostPerRequest: 0.5,
     },
   ],
 }
