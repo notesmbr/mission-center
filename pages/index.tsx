@@ -5,6 +5,7 @@ import AgentTable from '../components/AgentTable'
 import UsageChart from '../components/UsageChart'
 import CostBreakdown from '../components/CostBreakdown'
 import BudgetAnalysis from '../components/BudgetAnalysis'
+import PermissionsView from '../components/PermissionsView'
 
 interface StatusData {
   openclaw: { status: string; uptime: string; lastHeartbeat: string }
@@ -38,20 +39,23 @@ interface UsageData {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'budget'>('status')
+  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'budget' | 'permissions'>('status')
   const [statusData, setStatusData] = useState<StatusData | null>(null)
   const [usageData, setUsageData] = useState<UsageData | null>(null)
+  const [permissionsData, setPermissionsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statusRes, usageRes] = await Promise.all([
+        const [statusRes, usageRes, permRes] = await Promise.all([
           fetch('/api/status'),
           fetch('/api/usage'),
+          fetch('/api/permissions'),
         ])
         setStatusData(await statusRes.json())
         setUsageData(await usageRes.json())
+        setPermissionsData(await permRes.json())
       } catch (error) {
         console.error('Failed to fetch data:', error)
       } finally {
@@ -109,8 +113,8 @@ export default function Home() {
         {/* Navigation Tabs */}
         <div className="bg-slate-900 border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-6 py-4">
-            <div className="flex gap-4">
-              {(['status', 'usage', 'budget'] as const).map((tab) => (
+            <div className="flex gap-4 overflow-x-auto">
+              {(['status', 'usage', 'budget', 'permissions'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -119,6 +123,7 @@ export default function Home() {
                   {tab === 'status' && '📊 Status'}
                   {tab === 'usage' && '💾 API Usage'}
                   {tab === 'budget' && '💰 Budget Analysis'}
+                  {tab === 'permissions' && '🔐 Setup & Permissions'}
                 </button>
               ))}
             </div>
@@ -209,6 +214,11 @@ export default function Home() {
                 totalCost={usageData.summary.totalCostUSD}
               />
             </div>
+          )}
+
+          {/* PERMISSIONS TAB */}
+          {activeTab === 'permissions' && permissionsData && (
+            <PermissionsView data={permissionsData} />
           )}
         </main>
 
