@@ -6,6 +6,7 @@ import UsageChart from '../components/UsageChart'
 import CostBreakdown from '../components/CostBreakdown'
 import BudgetAnalysis from '../components/BudgetAnalysis'
 import PermissionsView from '../components/PermissionsView'
+import OptimizationsView from '../components/OptimizationsView'
 
 interface StatusData {
   openclaw: { status: string; uptime: string; lastHeartbeat: string }
@@ -39,23 +40,26 @@ interface UsageData {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'budget' | 'permissions'>('status')
+  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'budget' | 'permissions' | 'optimizations'>('status')
   const [statusData, setStatusData] = useState<StatusData | null>(null)
   const [usageData, setUsageData] = useState<UsageData | null>(null)
   const [permissionsData, setPermissionsData] = useState<any>(null)
+  const [optimizationsData, setOptimizationsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statusRes, usageRes, permRes] = await Promise.all([
+        const [statusRes, usageRes, permRes, optRes] = await Promise.all([
           fetch('/api/status'),
           fetch('/api/usage'),
           fetch('/api/permissions'),
+          fetch('/api/optimizations'),
         ])
         setStatusData(await statusRes.json())
         setUsageData(await usageRes.json())
         setPermissionsData(await permRes.json())
+        setOptimizationsData(await optRes.json())
       } catch (error) {
         console.error('Failed to fetch data:', error)
       } finally {
@@ -114,7 +118,7 @@ export default function Home() {
         <div className="bg-slate-900 border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex gap-4 overflow-x-auto">
-              {(['status', 'usage', 'budget', 'permissions'] as const).map((tab) => (
+              {(['status', 'usage', 'budget', 'permissions', 'optimizations'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -124,6 +128,7 @@ export default function Home() {
                   {tab === 'usage' && '💾 API Usage'}
                   {tab === 'budget' && '💰 Budget Analysis'}
                   {tab === 'permissions' && '🔐 Setup & Permissions'}
+                  {tab === 'optimizations' && '⚡ Optimizations'}
                 </button>
               ))}
             </div>
@@ -219,6 +224,11 @@ export default function Home() {
           {/* PERMISSIONS TAB */}
           {activeTab === 'permissions' && permissionsData && (
             <PermissionsView data={permissionsData} />
+          )}
+
+          {/* OPTIMIZATIONS TAB */}
+          {activeTab === 'optimizations' && optimizationsData && (
+            <OptimizationsView data={optimizationsData} />
           )}
         </main>
 
