@@ -5,13 +5,6 @@ const MONTHLY_BUDGET = 100
 
 interface OpenRouterCreditsResponse {
   data: {
-    label: string
-    usage: number
-    usage_daily: number
-    usage_weekly: number
-    usage_monthly: number
-    limit: number
-    limit_remaining: number
     total_credits: number
     total_usage: number
   }
@@ -140,7 +133,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse)
         ? {
             totalCredits: creditData.total_credits,
             totalUsage: creditData.total_usage,
-            limitRemaining: creditData.limit_remaining,
+            remainingCredits: parseFloat((creditData.total_credits - creditData.total_usage).toFixed(2)),
           }
         : null,
     },
