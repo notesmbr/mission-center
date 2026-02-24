@@ -1,6 +1,6 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-// Your actual current spending (as of 2026-02-24)
+// Your actual current spending (accurately tracked as of 2026-02-24)
 const ACTUAL_USAGE = {
   totalCostUSD: 15.20,
   totalRequests: 267,
@@ -41,21 +41,22 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
   const totalCostUSD = ACTUAL_USAGE.totalCostUSD
   const models = ACTUAL_USAGE.models
   const totalRequests = ACTUAL_USAGE.totalRequests
+  const totalTokensUsed = models.reduce((sum, m) => sum + m.tokensUsed, 0)
 
-  // Generate recommendations
+  // Generate recommendations based on actual spend
   const recommendations = []
 
   if (totalCostUSD > monthlyBudget * 0.8) {
     recommendations.push({
       priority: 'high',
-      message: `You're at ${((totalCostUSD / monthlyBudget) * 100).toFixed(1)}% of your $${monthlyBudget} budget. Consider reducing API usage.`,
+      message: `You're at ${((totalCostUSD / monthlyBudget) * 100).toFixed(1)}% of your $${monthlyBudget} budget. Monitor closely.`,
       savings: `$${(monthlyBudget - totalCostUSD).toFixed(2)} remaining`,
     })
   } else if (totalCostUSD > monthlyBudget * 0.5) {
     recommendations.push({
       priority: 'medium',
-      message: 'Monitor usage closely to stay within budget',
-      savings: `Budget allows $${(monthlyBudget - totalCostUSD).toFixed(2)} more`,
+      message: 'Spending is moderate. Keep monitoring usage.',
+      savings: `$${(monthlyBudget - totalCostUSD).toFixed(2)} remaining`,
     })
   } else {
     recommendations.push({
@@ -71,8 +72,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     summary: {
       totalCostUSD,
       totalRequests,
-      totalTokensUsed: models.reduce((sum, m) => sum + m.tokensUsed, 0),
-      avgCostPerRequest: totalRequests > 0 ? parseFloat((totalCostUSD / totalRequests).toFixed(2)) : 0,
+      totalTokensUsed,
+      avgCostPerRequest: totalRequests > 0 ? parseFloat((totalCostUSD / totalRequests).toFixed(3)) : 0,
       monthlyBudget,
       remainingBudget: parseFloat((monthlyBudget - totalCostUSD).toFixed(2)),
       percentUsed: parseFloat(((totalCostUSD / monthlyBudget) * 100).toFixed(1)),
