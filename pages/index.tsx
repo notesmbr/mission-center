@@ -7,6 +7,7 @@ import CostBreakdown from '../components/CostBreakdown'
 import BudgetAnalysis from '../components/BudgetAnalysis'
 import PermissionsView from '../components/PermissionsView'
 import OptimizationsView from '../components/OptimizationsView'
+import ClaudeUsageView from '../components/ClaudeUsageView'
 
 interface StatusData {
   openclaw: { status: string; uptime: string; lastHeartbeat: string }
@@ -39,10 +40,15 @@ interface UsageData {
   }>
 }
 
-export default function Home() {
-  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'budget' | 'permissions' | 'optimizations'>('status')
+interface HomeProps {
+  signOut?: () => void
+}
+
+export default function Home({ signOut }: HomeProps) {
+  const [activeTab, setActiveTab] = useState<'status' | 'usage' | 'claude' | 'budget' | 'permissions' | 'optimizations'>('status')
   const [statusData, setStatusData] = useState<StatusData | null>(null)
   const [usageData, setUsageData] = useState<UsageData | null>(null)
+  const [claudeData, setClaudeData] = useState<any>(null)
   const [permissionsData, setPermissionsData] = useState<any>(null)
   const [optimizationsData, setOptimizationsData] = useState<any>(null)
   const [loading, setLoading] = useState(true)
@@ -50,14 +56,16 @@ export default function Home() {
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [statusRes, usageRes, permRes, optRes] = await Promise.all([
+        const [statusRes, usageRes, claudeRes, permRes, optRes] = await Promise.all([
           fetch('/api/status'),
           fetch('/api/usage'),
+          fetch('/api/claude-usage'),
           fetch('/api/permissions'),
           fetch('/api/optimizations'),
         ])
         setStatusData(await statusRes.json())
         setUsageData(await usageRes.json())
+        setClaudeData(await claudeRes.json())
         setPermissionsData(await permRes.json())
         setOptimizationsData(await optRes.json())
       } catch (error) {
@@ -68,7 +76,7 @@ export default function Home() {
     }
 
     fetchData()
-    const interval = setInterval(fetchData, 10000) // Refresh every 10 seconds
+    const interval = setInterval(fetchData, 10000)
     return () => clearInterval(interval)
   }, [])
 
@@ -102,14 +110,25 @@ export default function Home() {
                 <h1 className="text-3xl font-bold text-white">🚀 Mission Center</h1>
                 <p className="text-slate-400 text-sm mt-1">OpenClaw Command & Control</p>
               </div>
-              {statusData && (
-                <div className="text-right">
-                  <p className="text-sm text-slate-400">OpenClaw Status</p>
-                  <p className={`text-lg font-bold ${statusData.openclaw.status === 'active' ? 'text-green-400' : 'text-red-400'}`}>
-                    {statusData.openclaw.status === 'active' ? '● ACTIVE' : '○ OFFLINE'}
-                  </p>
-                </div>
-              )}
+              <div className="flex items-center gap-6">
+                {statusData && (
+                  <div className="text-right">
+                    <p className="text-sm text-slate-400">OpenClaw Status</p>
+                    <p className={`text-lg font-bold ${statusData.openclaw.status === 'active' ? 'text-green-400' : 'text-red-400'}`}>
+                      {statusData.openclaw.status === 'active' ? '● ACTIVE' : '○ OFFLINE'}
+                    </p>
+                  </div>
+                )}
+                {signOut && (
+                  <button
+                    onClick={signOut}
+                    className="text-slate-500 hover:text-slate-300 text-sm border border-slate-700 hover:border-slate-500 rounded-lg px-3 py-1.5 transition-colors"
+                    title="Sign out"
+                  >
+                    🔒 Sign Out
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </header>
@@ -118,7 +137,7 @@ export default function Home() {
         <div className="bg-slate-900 border-b border-slate-800">
           <div className="max-w-7xl mx-auto px-6 py-4">
             <div className="flex gap-4 overflow-x-auto">
-              {(['status', 'usage', 'budget', 'permissions', 'optimizations'] as const).map((tab) => (
+              {(['status', 'usage', 'claude', 'budget', 'permissions', 'optimizations'] as const).map((tab) => (
                 <button
                   key={tab}
                   onClick={() => setActiveTab(tab)}
@@ -126,6 +145,7 @@ export default function Home() {
                 >
                   {tab === 'status' && '📊 Status'}
                   {tab === 'usage' && '💾 API Usage'}
+                  {tab === 'claude' && '🤖 Claude Usage'}
                   {tab === 'budget' && '💰 Budget Analysis'}
                   {tab === 'permissions' && '🔐 Setup & Permissions'}
                   {tab === 'optimizations' && '⚡ Optimizations'}
@@ -205,6 +225,11 @@ export default function Home() {
             </div>
           )}
 
+          {/* CLAUDE USAGE TAB */}
+          {activeTab === 'claude' && claudeData && (
+            <ClaudeUsageView data={claudeData} />
+          )}
+
           {/* BUDGET TAB */}
           {activeTab === 'budget' && usageData && (
             <div className="space-y-6">
@@ -235,7 +260,7 @@ export default function Home() {
         {/* Footer */}
         <footer className="bg-slate-900 border-t border-slate-800 mt-12">
           <div className="max-w-7xl mx-auto px-6 py-6 text-center text-slate-400 text-sm">
-            <p>Mission Center v1.0.0 • Last updated: {new Date().toLocaleString()}</p>
+            <p>Mission Center v1.1.0 • Last updated: {new Date().toLocaleString()}</p>
           </div>
         </footer>
       </div>
