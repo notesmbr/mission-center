@@ -23,6 +23,21 @@ type TasksListData =
       lastUpdated: string
     }
 
+type TaskDetailsData =
+  | {
+      dataSource: 'clawdbot_task_details'
+      available: true
+      task: any
+      log: { available: true; path: string; tail: string; lineCount: number } | { available: false; reason: string }
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'clawdbot_task_details'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
 type CronListData =
   | { dataSource: 'openclaw_cron_list'; available: true; jobs: any[]; lastUpdated: string }
   | { dataSource: 'openclaw_cron_list'; available: false; reason: string; lastUpdated: string }
@@ -118,6 +133,11 @@ function msToRelative(ms?: number): string {
   return `${d}d ago`
 }
 
+function msToIso(ms?: number): string {
+  if (!ms) return 'n/a'
+  return new Date(ms).toISOString()
+}
+
 function scheduleLabel(job: any): string {
   const sch = job?.schedule
   if (!sch) return 'n/a'
@@ -162,6 +182,9 @@ export default function Home() {
   const [traderLog, setTraderLog] = useState<LogData | null>(null)
 
   const [selectedProject, setSelectedProject] = useState<string>('all')
+  const [selectedTaskId, setSelectedTaskId] = useState<string>('')
+  const [taskDetails, setTaskDetails] = useState<TaskDetailsData | null>(null)
+  const [taskDetailsLoading, setTaskDetailsLoading] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
 
@@ -178,7 +201,7 @@ export default function Home() {
         const [alertsRes, tasksRes, cronRes, statusRes, setupRes, modelsRes, usageRes, maintRes, traderRes] = await Promise.all([
           safeFetchJson('/api/alerts'),
           // sync=1: best-effort orchestrator check, throttled server-side
-          safeFetchJson('/api/tasks/list?sync=1'),
+          safeFetchJson(`/api/tasks/list?sync=1&project=${encodeURIComponent(selectedProject)}`),
           safeFetchJson('/api/cron/list'),
           safeFetchJson('/api/status'),
           safeFetchJson('/api/openclaw-setup'),
@@ -207,7 +230,7 @@ export default function Home() {
     fetchAll()
     const interval = setInterval(fetchAll, 10000)
     return () => clearInterval(interval)
-  }, [])
+  }, [selectedProject])
 
   useEffect(() => {
     if (!selectedJobId) return
@@ -246,8 +269,58 @@ export default function Home() {
       }
     }
 
+    if (alertsData && alertsData.available) {
+      for (const a of alertsData.alerts || []) {
+        if (a?.project) set.add(a.project)
+      }
+    }
+
     return ['all', ...Array.from(set).sort()]
-  }, [cronList, tasksList])
+  }, [cronList, tasksList, alertsData])
+
+  useEffect(() => {
+    if (selectedProject === 'all') return
+    if (!projectOptions.includes(selectedProject)) {
+      setSelectedProject('all')
+    }
+  }, [projectOptions, selectedProject])
+
+  useEffect(() => {
+    if (!selectedTaskId) {
+      setTaskDetails(null)
+      setTaskDetailsLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const fetchTaskDetails = async () => {
+      setTaskDetailsLoading(true)
+      try {
+        const res = await fetch(`/api/tasks/details?id=${encodeURIComponent(selectedTaskId)}`)
+        const data = await res.json()
+        if (!cancelled) setTaskDetails(data)
+      } catch (_err) {
+        if (!cancelled) {
+          setTaskDetails({
+            dataSource: 'clawdbot_task_details',
+            available: false,
+            reason: 'Failed to load task details.',
+            lastUpdated: new Date().toISOString(),
+          })
+        }
+      } finally {
+        if (!cancelled) setTaskDetailsLoading(false)
+      }
+    }
+
+    fetchTaskDetails()
+    const interval = setInterval(fetchTaskDetails, 15000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [selectedTaskId])
 
   const filteredJobs = useMemo(() => {
     const jobs = cronList && cronList.available ? cronList.jobs : []
@@ -288,6 +361,13 @@ export default function Home() {
     if (selectedProject === 'all') return tasks
     return tasks.filter((t: any) => t?.projectId === selectedProject)
   }, [tasksList, selectedProject])
+
+  useEffect(() => {
+    if (!selectedTaskId) return
+    if (!filteredTasks.some((task: any) => task?.id === selectedTaskId)) {
+      setSelectedTaskId('')
+    }
+  }, [filteredTasks, selectedTaskId])
 
   const taskBuckets = useMemo(() => {
     const queued: any[] = []
@@ -486,7 +566,7 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="text-white text-lg font-semibold">Tasks</div>
-                    <div className="text-slate-500 text-xs">board auto-refreshes • status derives from .clawdbot</div>
+                    <div className="text-slate-500 text-xs">board auto-refreshes • status derives from .clawdbot • click a task for details</div>
                   </div>
 
                   {!tasksList ? (
@@ -518,10 +598,14 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.queued.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.queued.map((t: any) => (
-                              <div key={t.id} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                              <button
+                                key={t.id}
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className="w-full text-left bg-slate-950/40 border border-slate-700 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-slate-400 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -532,11 +616,15 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.running.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.running.map((t: any) => (
-                              <div key={t.id} className="bg-slate-950/40 border border-blue-800 rounded-lg p-3">
+                              <button
+                                key={t.id}
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className="w-full text-left bg-slate-950/40 border border-blue-800 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-slate-400 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
                                 {t.branch && <div className="text-slate-500 text-xs mt-1">branch: {t.branch}</div>}
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -547,10 +635,14 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.needsAttention.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.needsAttention.map((t: any) => (
-                              <div key={t.id} className="bg-slate-950/40 border border-rose-800 rounded-lg p-3">
+                              <button
+                                key={t.id}
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className="w-full text-left bg-slate-950/40 border border-rose-800 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-rose-200 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -561,10 +653,14 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.done.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.done.map((t: any) => (
-                              <div key={t.id} className="bg-slate-950/40 border border-emerald-800 rounded-lg p-3">
+                              <button
+                                key={t.id}
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className="w-full text-left bg-slate-950/40 border border-emerald-800 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-emerald-200 text-xs mt-1">{t.projectId || 'no-project'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -575,10 +671,14 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.failed.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.failed.map((t: any) => (
-                              <div key={t.id} className="bg-slate-950/40 border border-rose-900 rounded-lg p-3">
+                              <button
+                                key={t.id}
+                                onClick={() => setSelectedTaskId(t.id)}
+                                className="w-full text-left bg-slate-950/40 border border-rose-900 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-rose-200 text-xs mt-1">{t.projectId || 'no-project'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </div>
+                              </button>
                             ))}
                           </div>
                         </div>
@@ -589,6 +689,98 @@ export default function Home() {
                           <div className="text-white font-semibold">Unknown status</div>
                           <div className="text-slate-500 text-xs mt-1">tasks with unrecognized state</div>
                           <pre className="text-xs text-slate-300 mt-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(taskBuckets.unknown, null, 2)}</pre>
+                        </div>
+                      )}
+
+                      {selectedTaskId && (
+                        <div
+                          className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm p-4 md:p-6"
+                          onClick={() => setSelectedTaskId('')}
+                        >
+                          <div
+                            className="mx-auto w-full max-w-4xl max-h-full overflow-hidden bg-slate-900 border border-slate-700 rounded-xl"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                              <div className="min-w-0">
+                                <div className="text-white font-semibold truncate">Task details</div>
+                                <div className="text-slate-400 text-xs truncate">{selectedTaskId}</div>
+                              </div>
+                              <button
+                                onClick={() => setSelectedTaskId('')}
+                                className="text-slate-300 hover:text-white text-sm border border-slate-600 rounded px-2 py-1"
+                              >
+                                Close
+                              </button>
+                            </div>
+
+                            <div className="p-4 overflow-y-auto max-h-[75vh]">
+                              {taskDetailsLoading && <div className="text-slate-400 text-sm">Loading details...</div>}
+
+                              {!taskDetailsLoading && !taskDetails && (
+                                <div className="text-slate-400 text-sm">No task details payload.</div>
+                              )}
+
+                              {!taskDetailsLoading && taskDetails && !taskDetails.available && (
+                                <div className="text-rose-200 text-sm">{taskDetails.reason}</div>
+                              )}
+
+                              {!taskDetailsLoading && taskDetails && taskDetails.available && (
+                                <div className="space-y-4">
+                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">projectId</div>
+                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.projectId || 'n/a'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">agent</div>
+                                      <div className="text-slate-100 mt-1">{taskDetails.task.agent || 'n/a'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">status</div>
+                                      <div className="text-slate-100 mt-1">{taskDetails.task.status || 'unknown'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">updatedAt</div>
+                                      <div className="text-slate-100 mt-1">
+                                        {msToIso(taskDetails.task.updatedAt)} ({msToRelative(taskDetails.task.updatedAt || taskDetails.task.createdAt)})
+                                      </div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">branch</div>
+                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.branch || 'n/a'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">worktree</div>
+                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.worktree || 'n/a'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">tmuxSession</div>
+                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.tmuxSession || 'n/a'}</div>
+                                    </div>
+                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                                      <div className="text-slate-500 text-xs">attempts / maxAttempts</div>
+                                      <div className="text-slate-100 mt-1">
+                                        {taskDetails.task.attempts ?? 0} / {taskDetails.task.maxAttempts ?? '?'}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  <div className="card">
+                                    <div className="text-white font-semibold">Session log tail</div>
+                                    {taskDetails.log.available ? (
+                                      <>
+                                        <div className="text-slate-500 text-xs mt-1">{taskDetails.log.path}</div>
+                                        <pre className="text-xs text-slate-200 mt-3 whitespace-pre-wrap overflow-x-auto">{taskDetails.log.tail || '(log is empty)'}</pre>
+                                      </>
+                                    ) : (
+                                      <div className="text-slate-400 text-sm mt-2">no log available</div>
+                                    )}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </>
