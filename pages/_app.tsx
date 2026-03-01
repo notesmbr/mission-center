@@ -31,7 +31,7 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
       <div className={`bg-slate-900 border border-slate-700 rounded-2xl p-8 w-full max-w-sm shadow-2xl ${shake ? 'animate-shake' : ''}`}>
         <div className="text-center mb-8">
           <div className="text-5xl mb-4">🔒</div>
-          <h1 className="text-2xl font-bold text-white">Mission Center</h1>
+          <h1 className="text-2xl font-bold text-white">Samoas Control</h1>
           <p className="text-slate-400 text-sm mt-2">Enter PIN to continue</p>
         </div>
 

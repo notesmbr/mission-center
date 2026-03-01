@@ -1,102 +1,165 @@
-import { useState, useEffect } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Head from 'next/head'
-import StatusCard from '../components/StatusCard'
-import AgentTable from '../components/AgentTable'
-import UsageChart from '../components/UsageChart'
-import CostBreakdown from '../components/CostBreakdown'
-import BudgetAnalysis from '../components/BudgetAnalysis'
-import PermissionsView from '../components/PermissionsView'
-import OptimizationsView from '../components/OptimizationsView'
-import ClaudeUsageView from '../components/ClaudeUsageView'
 import Sidebar, { type NavKey } from '../components/Sidebar'
-import AccuracyBadge from '../components/AccuracyBadge'
 
-interface StatusData {
-  openclaw: { status: string; uptime: string; lastHeartbeat: string }
-  agents: Array<{ id: string; name: string; model: string; status: 'active' | 'idle' | 'error'; tasksCompleted: number }>
+type AlertsData =
+  | { dataSource: 'derived'; available: true; alerts: any[]; lastUpdated: string }
+  | { dataSource: 'derived'; available: false; reason: string; lastUpdated: string }
+
+type CronListData =
+  | { dataSource: 'openclaw_cron_list'; available: true; jobs: any[]; lastUpdated: string }
+  | { dataSource: 'openclaw_cron_list'; available: false; reason: string; lastUpdated: string }
+
+type CronRunsData =
+  | { dataSource: 'openclaw_cron_runs'; available: true; entries: any[]; lastUpdated: string }
+  | { dataSource: 'openclaw_cron_runs'; available: false; reason: string; lastUpdated: string }
+
+type AnyJson = any
+
+function parseProjectTag(name?: string): string | null {
+  if (!name) return null
+  const m = name.match(/^\[project:([^\]]+)\]\s+/)
+  return m?.[1] || null
 }
 
-interface UsageData {
-  period: { start: string; end: string }
-  models: Array<{
-    name: string
-    provider: string
-    tokensUsed: number
-    costUSD: number
-    requests: number
-    avgCostPerRequest: number
-  }>
-  summary: {
-    totalCostUSD: number
-    totalRequests: number
-    totalTokensUsed: number
-    avgCostPerRequest: number
-    monthlyBudget?: number
-    remainingBudget?: number
-    percentUsed?: number
+function msToRelative(ms?: number): string {
+  if (!ms) return 'n/a'
+  const s = Math.floor((Date.now() - ms) / 1000)
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h ago`
+  const d = Math.floor(h / 24)
+  return `${d}d ago`
+}
+
+function scheduleLabel(job: any): string {
+  const sch = job?.schedule
+  if (!sch) return 'n/a'
+  if (sch.kind === 'every') {
+    const ms = sch.everyMs || 0
+    const mins = Math.round(ms / 60000)
+    if (!mins) return 'every ?'
+    if (mins < 60) return `every ${mins}m`
+    const hrs = Math.round(mins / 60)
+    return `every ${hrs}h`
   }
-  recommendations: Array<{
-    priority: 'high' | 'medium' | 'low'
-    message: string
-    savings: string
-  }>
+  if (sch.kind === 'cron') return `cron ${sch.expr || '?'}${sch.tz ? ` @ ${sch.tz}` : ''}`
+  if (sch.kind === 'at') return `at ${sch.at}`
+  return sch.kind
 }
 
-interface HomeProps {
-  signOut?: () => void
-}
+export default function Home() {
+  const [activeTab, setActiveTab] = useState<NavKey>('alerts')
 
-export default function Home({ signOut }: HomeProps) {
-  const [activeTab, setActiveTab] = useState<NavKey>('overview')
-  const [statusData, setStatusData] = useState<StatusData | null>(null)
-  const [usageData, setUsageData] = useState<UsageData | null>(null)
-  const [claudeData, setClaudeData] = useState<any>(null)
-  const [permissionsData, setPermissionsData] = useState<any>(null)
-  const [optimizationsData, setOptimizationsData] = useState<any>(null)
-  const [setupData, setSetupData] = useState<any>(null)
-  const [openclawUsage, setOpenclawUsage] = useState<any>(null)
+  const [alertsData, setAlertsData] = useState<AlertsData | null>(null)
+  const [cronList, setCronList] = useState<CronListData | null>(null)
+
+  const [selectedProject, setSelectedProject] = useState<string>('all')
+  const [selectedJobId, setSelectedJobId] = useState<string>('')
+  const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
+
+  // Debug payloads (raw truth)
+  const [debugStatus, setDebugStatus] = useState<AnyJson | null>(null)
+  const [debugSetup, setDebugSetup] = useState<AnyJson | null>(null)
+  const [debugModels, setDebugModels] = useState<AnyJson | null>(null)
+
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
-    const fetchData = async () => {
+    const fetchAll = async () => {
       try {
-        const [statusRes, usageRes, claudeRes, permRes, optRes, setupRes, ocUsageRes] = await Promise.all([
+        const [alertsRes, cronRes, statusRes, setupRes, modelsRes] = await Promise.all([
+          fetch('/api/alerts'),
+          fetch('/api/cron/list'),
           fetch('/api/status'),
-          fetch('/api/usage'),
-          fetch('/api/claude-usage'),
-          fetch('/api/permissions'),
-          fetch('/api/optimizations'),
           fetch('/api/openclaw-setup'),
-          fetch('/api/openclaw-usage'),
+          fetch('/api/models/list'),
         ])
-        setStatusData(await statusRes.json())
-        setUsageData(await usageRes.json())
-        setClaudeData(await claudeRes.json())
-        setPermissionsData(await permRes.json())
-        setOptimizationsData(await optRes.json())
-        setSetupData(await setupRes.json())
-        setOpenclawUsage(await ocUsageRes.json())
-      } catch (error) {
-        console.error('Failed to fetch data:', error)
+
+        setAlertsData(await alertsRes.json())
+        setCronList(await cronRes.json())
+        setDebugStatus(await statusRes.json())
+        setDebugSetup(await setupRes.json())
+        setDebugModels(await modelsRes.json())
+      } catch (e) {
+        console.error('fetchAll failed', e)
       } finally {
         setLoading(false)
       }
     }
 
-    fetchData()
-    const interval = setInterval(fetchData, 10000)
+    fetchAll()
+    const interval = setInterval(fetchAll, 10000)
     return () => clearInterval(interval)
   }, [])
+
+  useEffect(() => {
+    if (!selectedJobId) return
+
+    const fetchRuns = async () => {
+      try {
+        const res = await fetch(`/api/cron/runs?id=${encodeURIComponent(selectedJobId)}`)
+        setCronRuns(await res.json())
+      } catch (e) {
+        console.error('fetchRuns failed', e)
+      }
+    }
+
+    fetchRuns()
+    const interval = setInterval(fetchRuns, 15000)
+    return () => clearInterval(interval)
+  }, [selectedJobId])
+
+  const projectOptions = useMemo(() => {
+    const jobs = cronList && cronList.available ? cronList.jobs : []
+    const set = new Set<string>()
+    for (const j of jobs) {
+      const tag = parseProjectTag(j?.name)
+      if (tag) set.add(tag)
+    }
+    return ['all', ...Array.from(set).sort()]
+  }, [cronList])
+
+  const filteredJobs = useMemo(() => {
+    const jobs = cronList && cronList.available ? cronList.jobs : []
+    if (selectedProject === 'all') return jobs
+    return jobs.filter((j: any) => parseProjectTag(j?.name) === selectedProject)
+  }, [cronList, selectedProject])
+
+  const jobBuckets = useMemo(() => {
+    const needs: any[] = []
+    const completed: any[] = []
+    const scheduled: any[] = []
+    const disabled: any[] = []
+
+    for (const job of filteredJobs) {
+      if (!job?.enabled) {
+        disabled.push(job)
+        continue
+      }
+      const state = job?.state || {}
+      const lastRunStatus = state?.lastRunStatus
+      const consecutiveErrors = state?.consecutiveErrors || 0
+      const lastRunAtMs = state?.lastRunAtMs
+
+      if (lastRunStatus === 'error' || consecutiveErrors > 0) {
+        needs.push(job)
+      } else if (lastRunStatus === 'ok' && lastRunAtMs && Date.now() - lastRunAtMs < 1000 * 60 * 60 * 12) {
+        completed.push(job)
+      } else {
+        scheduled.push(job)
+      }
+    }
+
+    return { needs, completed, scheduled, disabled }
+  }, [filteredJobs])
 
   if (loading) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin mb-4">
-            <p className="text-4xl">⚙️</p>
-          </div>
-          <p className="text-slate-400">Loading Mission Center...</p>
-        </div>
+        <div className="text-slate-300">Loading Samoas Control</div>
       </div>
     )
   }
@@ -104,210 +167,217 @@ export default function Home({ signOut }: HomeProps) {
   return (
     <>
       <Head>
-        <title>Mission Center - OpenClaw Command</title>
-        <meta name="description" content="OpenClaw Mission Control Dashboard" />
+        <title>Samoas Control</title>
+        <meta name="description" content="Samoas Control local OpenClaw dashboard" />
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
       <div className="min-h-screen bg-slate-950">
-        <div className="flex min-h-screen">
+        <div className="flex flex-col md:flex-row min-h-screen">
           <Sidebar active={activeTab} onChange={setActiveTab} />
 
-          <div className="flex-1">
-            {/* Top bar */}
+          <div className="flex-1 min-w-0">
             <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
-              <div className="px-6 py-4 flex items-center justify-between">
-                <div>
-                  <div className="text-white text-xl font-semibold tracking-wide">Mission Control</div>
-                  <div className="text-slate-400 text-xs mt-0.5">OpenClaw • status & usage • read-only</div>
+              <div className="px-4 md:px-6 py-4 flex items-center justify-between gap-4">
+                <div className="min-w-0">
+                  <div className="text-white text-lg md:text-xl font-semibold tracking-wide truncate">Samoas Control</div>
+                  <div className="text-slate-400 text-xs mt-0.5 truncate">Alert inbox  only things that need Max</div>
                 </div>
 
-                <div className="flex items-center gap-4">
-                  {statusData && (
-                    <div className="text-right">
-                      <div className="text-[11px] text-slate-400">OpenClaw</div>
-                      <div className={`text-sm font-semibold ${statusData.openclaw.status === 'active' ? 'text-emerald-300' : 'text-rose-300'}`}>
-                        {statusData.openclaw.status === 'active' ? 'ACTIVE' : 'OFFLINE'}
-                      </div>
-                    </div>
-                  )}
-                  {signOut && (
-                    <button
-                      onClick={signOut}
-                      className="text-slate-400 hover:text-slate-200 text-xs border border-slate-800 hover:border-slate-700 rounded-lg px-3 py-2 transition-colors"
-                      title="Sign out"
-                    >
-                      Sign Out
-                    </button>
-                  )}
+                <div className="flex items-center gap-3 shrink-0">
+                  <div className="text-xs text-slate-500">Project</div>
+                  <select
+                    value={selectedProject}
+                    onChange={(e) => setSelectedProject(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                  >
+                    {projectOptions.map((p) => (
+                      <option key={p} value={p}>
+                        {p === 'all' ? 'All' : p}
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
             </header>
 
-            {/* Content */}
-            <main className="px-6 py-6">
-              {/* OVERVIEW */}
-              {activeTab === 'overview' && (
-                <div className="space-y-6">
+            <main className="px-4 md:px-6 py-6">
+              {/* ALERT INBOX */}
+              {activeTab === 'alerts' && (
+                <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Overview</div>
-                    <AccuracyBadge level={setupData?.available ? 'live' : 'unknown'} />
+                    <div className="text-white text-lg font-semibold">Alert Inbox</div>
+                    <div className="text-slate-500 text-xs">refreshes every 10s</div>
                   </div>
 
-                  {setupData?.available && (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                      <StatusCard label="Default Model" value={setupData.summary?.defaultModel || 'Unknown'} />
-                      <StatusCard label="Thinking" value={setupData.summary?.thinkingDefault || 'Unknown'} />
-                      <StatusCard label="Gateway" value={`${setupData.summary?.gateway?.mode || '?'} / ${setupData.summary?.gateway?.bind || '?'}`} />
-                      <StatusCard label="Web Search" value={setupData.summary?.webSearchProvider || 'Unknown'} />
-                    </div>
-                  )}
-
-                  {openclawUsage?.available && (
+                  {!alertsData || !alertsData.available ? (
                     <div className="card">
-                      <div className="flex items-center justify-between">
-                        <div className="text-white font-semibold">Codex OAuth Usage (estimated)</div>
-                        <AccuracyBadge level="derived" />
-                      </div>
-                      <div className="mt-3 text-sm text-slate-300">
-                        5h window: ~{openclawUsage.window5h.requestCountApprox} request(s) • 7d window: ~{openclawUsage.window7d.requestCountApprox} request(s)
-                      </div>
-                      <div className="mt-2 space-y-1">
-                        {(openclawUsage.alerts || []).slice(0, 2).map((a: any, idx: number) => (
-                          <div key={idx} className={`text-xs ${a.level === 'critical' ? 'text-rose-300' : a.level === 'warn' ? 'text-amber-300' : 'text-slate-400'}`}>
-                            {a.level.toUpperCase()}: {a.message}
+                      <div className="text-white font-semibold">Alerts unavailable</div>
+                      <div className="text-slate-400 text-sm mt-1">{alertsData && !alertsData.available ? alertsData.reason : 'No data yet.'}</div>
+                    </div>
+                  ) : alertsData.alerts.length === 0 ? (
+                    <div className="card">
+                      <div className="text-white font-semibold">No alerts</div>
+                      <div className="text-slate-400 text-sm mt-1">No errors/warnings detected that require your attention.</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-3">
+                      {alertsData.alerts
+                        .filter((a: any) => selectedProject === 'all' || a.project === selectedProject)
+                        .map((a: any) => (
+                          <div key={a.id} className="bg-slate-900 border border-slate-700 rounded-lg p-4">
+                            <div className="flex items-start justify-between gap-4">
+                              <div className="min-w-0">
+                                <div className="text-white font-semibold truncate">{a.title}</div>
+                                <div className="text-slate-400 text-xs mt-1">{a.source}{a.project ? `  project:${a.project}` : ''}</div>
+                              </div>
+                              <div className={
+                                'text-xs font-semibold px-2 py-1 rounded ' +
+                                (a.severity === 'error' ? 'bg-rose-900/60 text-rose-200 border border-rose-800' : 'bg-amber-900/60 text-amber-200 border border-amber-800')
+                              }>
+                                {a.severity.toUpperCase()}
+                              </div>
+                            </div>
+                            <pre className="text-xs text-slate-300 mt-3 whitespace-pre-wrap overflow-x-auto">{a.detail}</pre>
                           </div>
                         ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* JOBS BOARD */}
+              {activeTab === 'jobs' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-white text-lg font-semibold">Jobs Board</div>
+                    <div className="text-slate-500 text-xs">auto-updates from openclaw cron list</div>
+                  </div>
+
+                  {!cronList || !cronList.available ? (
+                    <div className="card">
+                      <div className="text-white font-semibold">Cron jobs unavailable</div>
+                      <div className="text-slate-400 text-sm mt-1">{cronList && !cronList.available ? cronList.reason : 'No data yet.'}</div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+                      <div className="card">
+                        <div className="text-white font-semibold">Needs attention</div>
+                        <div className="text-slate-500 text-xs mt-1">error / consecutive errors</div>
+                        <div className="mt-4 space-y-3">
+                          {jobBuckets.needs.length === 0 && <div className="text-slate-400 text-sm">None</div>}
+                          {jobBuckets.needs.map((job: any) => {
+                            const s = job.state || {}
+                            return (
+                              <button
+                                key={job.id}
+                                onClick={() => setSelectedJobId(job.id)}
+                                className="w-full text-left bg-slate-950/40 border border-rose-800 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
+                                <div className="text-slate-100 font-medium">{job.name || job.id}</div>
+                                <div className="text-rose-200 text-xs mt-1">{s.lastError || `lastRunStatus=${s.lastRunStatus}`}</div>
+                                <div className="text-slate-500 text-xs mt-1">Last: {msToRelative(s.lastRunAtMs)}  Next: {msToRelative(s.nextRunAtMs)}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <div className="text-white font-semibold">Scheduled</div>
+                        <div className="text-slate-500 text-xs mt-1">running on cadence</div>
+                        <div className="mt-4 space-y-3">
+                          {jobBuckets.scheduled.length === 0 && <div className="text-slate-400 text-sm">None</div>}
+                          {jobBuckets.scheduled.map((job: any) => {
+                            const s = job.state || {}
+                            return (
+                              <button
+                                key={job.id}
+                                onClick={() => setSelectedJobId(job.id)}
+                                className="w-full text-left bg-slate-950/40 border border-slate-700 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
+                                <div className="text-slate-100 font-medium">{job.name || job.id}</div>
+                                <div className="text-slate-400 text-xs mt-1">{scheduleLabel(job)}</div>
+                                <div className="text-slate-500 text-xs mt-1">Last: {msToRelative(s.lastRunAtMs)}  Next: {msToRelative(s.nextRunAtMs)}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
+                      </div>
+
+                      <div className="card">
+                        <div className="text-white font-semibold">Recently completed</div>
+                        <div className="text-slate-500 text-xs mt-1">ok in last 12h</div>
+                        <div className="mt-4 space-y-3">
+                          {jobBuckets.completed.length === 0 && <div className="text-slate-400 text-sm">None</div>}
+                          {jobBuckets.completed.map((job: any) => {
+                            const s = job.state || {}
+                            return (
+                              <button
+                                key={job.id}
+                                onClick={() => setSelectedJobId(job.id)}
+                                className="w-full text-left bg-slate-950/40 border border-emerald-800 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
+                                <div className="text-slate-100 font-medium">{job.name || job.id}</div>
+                                <div className="text-emerald-200 text-xs mt-1">Last OK: {msToRelative(s.lastRunAtMs)}</div>
+                                <div className="text-slate-500 text-xs mt-1">Next: {msToRelative(s.nextRunAtMs)}</div>
+                              </button>
+                            )
+                          })}
+                        </div>
                       </div>
                     </div>
                   )}
 
-                  {!setupData?.available && (
+                  {selectedJobId && (
                     <div className="card">
-                      <div className="text-white font-semibold">Live setup unavailable</div>
-                      <div className="text-slate-400 text-sm mt-1">{setupData?.reason || 'No details.'}</div>
+                      <div className="text-white font-semibold">Selected job</div>
+                      <div className="text-slate-400 text-xs mt-1">{selectedJobId}</div>
+                      {!cronRuns && <div className="text-slate-400 text-sm mt-3">Loading runs</div>}
+                      {cronRuns && !cronRuns.available && <div className="text-slate-400 text-sm mt-3">{cronRuns.reason}</div>}
+                      {cronRuns && cronRuns.available && (
+                        <pre className="text-xs text-slate-300 mt-3 overflow-x-auto whitespace-pre-wrap">
+                          {cronRuns.entries.length ? JSON.stringify(cronRuns.entries.slice(0, 8), null, 2) : 'No runs yet.'}
+                        </pre>
+                      )}
                     </div>
                   )}
                 </div>
               )}
 
-              {/* SETUP */}
-              {activeTab === 'setup' && (
+              {/* DEBUG */}
+              {activeTab === 'debug' && (
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">OpenClaw Setup</div>
-                    <AccuracyBadge level={setupData?.available ? 'live' : 'unknown'} />
+                    <div className="text-white text-lg font-semibold">Truth / Debug</div>
+                    <div className="text-slate-500 text-xs">raw sources (for auditing accuracy)</div>
                   </div>
+
                   <div className="card">
-                    <pre className="text-xs text-slate-300 overflow-x-auto">{JSON.stringify(setupData, null, 2)}</pre>
+                    <div className="text-white font-semibold">openclaw status --json</div>
+                    <pre className="text-xs text-slate-300 mt-3 overflow-x-auto">{JSON.stringify(debugStatus, null, 2)}</pre>
                   </div>
-                </div>
-              )}
 
-              {/* AGENTS */}
-              {activeTab === 'agents' && statusData && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Agents</div>
-                    <AccuracyBadge level="hardcoded" />
-                  </div>
                   <div className="card">
-                    <div className="text-slate-400 text-sm mb-4">
-                      This section will be updated next to reflect live OpenClaw agent lanes instead of the legacy hardcoded list.
-                    </div>
-                    <AgentTable agents={statusData.agents} />
-                  </div>
-                </div>
-              )}
-
-              {/* USAGE */}
-              {activeTab === 'usage' && usageData && (
-                <div className="space-y-6">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Usage</div>
-                    <AccuracyBadge level={(usageData as any).dataSource === 'live' ? 'live' : 'hardcoded'} />
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <StatusCard label="Total Cost" value={`$${usageData.summary.totalCostUSD.toFixed(2)}`} />
-                    <StatusCard label="Total Requests" value={usageData.summary.totalRequests} />
-                    <StatusCard label="Tokens Used" value={`${(usageData.summary.totalTokensUsed / 1000).toFixed(1)}K`} />
-                    <StatusCard label="Avg Cost/Request" value={`$${usageData.summary.avgCostPerRequest.toFixed(2)}`} />
+                    <div className="text-white font-semibold">openclaw cron list --json</div>
+                    <pre className="text-xs text-slate-300 mt-3 overflow-x-auto">{JSON.stringify(cronList, null, 2)}</pre>
                   </div>
 
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <UsageChart
-                      data={usageData.models.map((m) => ({
-                        name: m.name,
-                        value: m.tokensUsed,
-                        cost: m.costUSD,
-                      }))}
-                    />
-                    <CostBreakdown models={usageData.models} totalCost={usageData.summary.totalCostUSD} />
-                  </div>
-                </div>
-              )}
-
-              {/* CODEX */}
-              {activeTab === 'codex' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Codex OAuth Limits</div>
-                    <AccuracyBadge level={openclawUsage?.available ? 'derived' : 'unknown'} />
-                  </div>
                   <div className="card">
-                    <pre className="text-xs text-slate-300 overflow-x-auto">{JSON.stringify(openclawUsage, null, 2)}</pre>
+                    <div className="text-white font-semibold">openclaw models list --json</div>
+                    <pre className="text-xs text-slate-300 mt-3 overflow-x-auto">{JSON.stringify(debugModels, null, 2)}</pre>
                   </div>
-                </div>
-              )}
 
-              {/* SKILLS */}
-              {activeTab === 'skills' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Skills & Capabilities</div>
-                    <AccuracyBadge level="derived" />
-                  </div>
                   <div className="card">
-                    <div className="text-slate-300 text-sm">
-                      Coming next: installed skills, skills in-use, Brave search, and browser relay capability.
-                    </div>
+                    <div className="text-white font-semibold">openclaw setup (local openclaw.json, redacted)</div>
+                    <pre className="text-xs text-slate-300 mt-3 overflow-x-auto">{JSON.stringify(debugSetup, null, 2)}</pre>
                   </div>
                 </div>
               )}
-
-              {/* AUTOMATIONS */}
-              {activeTab === 'automations' && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Automations</div>
-                    <AccuracyBadge level="derived" />
-                  </div>
-                  <div className="card">
-                    <div className="text-slate-300 text-sm">
-                      Coming next: list cron jobs from local jobs.json (Smart Trader, nightly maintenance, etc.).
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* OPTIMIZATIONS */}
-              {activeTab === 'optimizations' && optimizationsData && (
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                    <div className="text-white text-lg font-semibold">Optimizations</div>
-                    <AccuracyBadge level="hardcoded" />
-                  </div>
-                  <OptimizationsView data={optimizationsData} />
-                </div>
-              )}
-
-              {/* Legacy panels kept for now */}
-              {activeTab === 'optimizations' && permissionsData && null}
-              {activeTab === 'optimizations' && claudeData && null}
             </main>
 
             <footer className="border-t border-slate-800 text-center text-slate-500 text-xs py-4">
-              Mission Center • refreshes every 10s
+              Samoas Control  alert inbox + project-scoped jobs
             </footer>
           </div>
         </div>

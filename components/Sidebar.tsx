@@ -1,24 +1,11 @@
 import React from 'react'
 
-export type NavKey =
-  | 'overview'
-  | 'setup'
-  | 'agents'
-  | 'usage'
-  | 'codex'
-  | 'skills'
-  | 'automations'
-  | 'optimizations'
+export type NavKey = 'alerts' | 'jobs' | 'debug'
 
 const NAV: Array<{ key: NavKey; label: string; icon: string }> = [
-  { key: 'overview', label: 'Overview', icon: '⌁' },
-  { key: 'setup', label: 'OpenClaw Setup', icon: '⚙' },
-  { key: 'agents', label: 'Agents', icon: '⧉' },
-  { key: 'usage', label: 'Usage', icon: '⟟' },
-  { key: 'codex', label: 'Codex Limits', icon: '◎' },
-  { key: 'skills', label: 'Skills', icon: '✦' },
-  { key: 'automations', label: 'Automations', icon: '⏱' },
-  { key: 'optimizations', label: 'Optimizations', icon: '⚡' },
+  { key: 'alerts', label: 'Alert Inbox', icon: '⨯' },
+  { key: 'jobs', label: 'Jobs Board', icon: '⏱' },
+  { key: 'debug', label: 'Truth / Debug', icon: '◧' },
 ]
 
 export default function Sidebar({
@@ -29,10 +16,10 @@ export default function Sidebar({
   onChange: (k: NavKey) => void
 }) {
   return (
-    <aside className="w-72 shrink-0 border-r border-slate-800 bg-slate-950/60">
+    <aside className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/60">
       <div className="px-5 py-5 border-b border-slate-800">
-        <div className="text-white text-lg font-semibold tracking-wide">Mission Control</div>
-        <div className="text-slate-400 text-xs mt-1">OpenClaw • read-only</div>
+        <div className="text-white text-lg font-semibold tracking-wide">Samoas Control</div>
+        <div className="text-slate-400 text-xs mt-1">OpenClaw • local-only • accuracy-first</div>
       </div>
 
       <nav className="p-3">
@@ -56,7 +43,7 @@ export default function Sidebar({
       </nav>
 
       <div className="p-4 mt-auto border-t border-slate-800 text-xs text-slate-500">
-        <div>v2 (in progress)</div>
+        <div>local-only MVP</div>
       </div>
     </aside>
   )

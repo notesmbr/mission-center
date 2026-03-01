@@ -43,11 +43,11 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     },
     activeProjects: [
       {
-        name: 'Mission Center',
+        name: 'Samoas Control',
         status: 'active',
-        url: 'https://mission-center-production.up.railway.app',
+        url: 'http://localhost:3000',
         repo: 'https://github.com/notesmbr/mission-center',
-        description: 'Command & control dashboard for OpenClaw',
+        description: 'Local control dashboard for OpenClaw',
         features: ['Agent monitoring', 'API cost tracking', 'Budget analysis', 'Real-time webhooks'],
       },
       {

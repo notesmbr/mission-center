@@ -1,98 +1,60 @@
-# 🚀 Mission Center - OpenClaw Command Dashboard
+# 🌊 Samoas Control - OpenClaw Local Dashboard
 
-Real-time monitoring and cost tracking for OpenClaw agents and API usage.
+Real-time **local-only** monitoring for OpenClaw agents, cron jobs, and trader activity.
 
 ## Features
 
 ✅ **Real-Time Status** - OpenClaw and agent health monitoring  
-✅ **API Usage Tracking** - Token counts and costs by model  
-✅ **Cost Breakdown** - Visual breakdown of spending by model  
-✅ **Budget Analysis** - Smart recommendations to optimize costs  
-✅ **Agent Management** - View all agents, models, and task history  
+✅ **Cron Jobs** - View cron list + recent runs  
+✅ **Activity Logs** - Maintenance + trader logs  
+✅ **Crypto Trader Panel** - Read-only view of `trader.log`  
+✅ **Setup Snapshot** - Local OpenClaw config summary
 
 ## Tech Stack
 
 - **Frontend:** Next.js 14 + React 18
 - **Styling:** Tailwind CSS
 - **Charts:** Recharts
-- **API:** OpenRouter (with manual tracking fallback)
 
 ## Getting Started
 
 ### Prerequisites
 
 - Node.js 18+ and npm
-- OpenRouter API key (for real-time usage data)
+- OpenClaw CLI available on the same host
 
 ### Installation
 
 ```bash
-# Clone repo
 cd mission-center
-
-# Install dependencies
 npm install
-
-# Create .env.local with your API key
-cp .env.example .env.local
-# Edit .env.local and add your NEXT_PUBLIC_OPENROUTER_API_KEY
 ```
 
-### Development
+### Local Development (local-only)
 
 ```bash
 npm run dev
 # Open http://localhost:3000
 ```
 
-### Production Build
+Or use the helper script (binds to 127.0.0.1):
 
 ```bash
-npm run build
-npm start
-```
-
-## Configuration
-
-Edit `.env.local`:
-
-```env
-NEXT_PUBLIC_OPENROUTER_API_KEY=your_api_key_here
-NEXT_PUBLIC_API_BASE_URL=https://your-deployed-url.com
+./serve-dashboard.sh
 ```
 
 ## API Endpoints
 
 - `GET /api/status` - OpenClaw and agent status
-- `GET /api/usage` - Token and cost tracking
-- `GET /api/budget` - Budget analysis (coming soon)
+- `GET /api/openclaw-setup` - Local OpenClaw config snapshot
+- `GET /api/cron/list` - Cron job list
+- `GET /api/cron/runs?id=<id>` - Cron run history for a job
+- `GET /api/logs/maintenance` - Maintenance log tail
+- `GET /api/logs/trader` - Trader log tail
 
 ## Deployment
 
-### Vercel (Recommended)
-
-```bash
-# Install Vercel CLI
-npm i -g vercel
-
-# Deploy
-vercel
-```
-
-### Manual Deployment
-
-```bash
-npm run build
-# Deploy the `.next` directory to your hosting
-```
-
-## Features Coming Soon
-
-- 🔐 Real-time API data integration (automatic token tracking)
-- 📊 Historical cost trends and forecasting
-- 🎯 Custom budget limits and alerts
-- 🔄 Agent scheduling and automation
-- 📈 Performance metrics dashboard
+Deployment configs are kept for reference, but Samoas Control is intended to run locally on the same host as OpenClaw.
 
 ## License
 
@@ -100,7 +62,4 @@ MIT
 
 ---
 
-Built with ❤️ for OpenClaw
-# Mission Center - Deploying to Vercel
-// Force redeploy - Mon Feb 23 21:51:00 EST 2026
-// Redeploying...
+Built for OpenClaw, tuned for local control.

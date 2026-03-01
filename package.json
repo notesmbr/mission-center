@@ -1,11 +1,11 @@
 {
   "name": "mission-center",
   "version": "1.1.0",
-  "description": "OpenClaw Mission Control Dashboard",
+  "description": "Samoas Control OpenClaw Dashboard",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -H 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start -H 127.0.0.1",
     "lint": "next lint"
   },
   "dependencies": {

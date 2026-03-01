@@ -1,34 +1,92 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  res.status(200).json({
-    openclaw: {
-      status: 'active',
-      uptime: 'continuous',
-      lastHeartbeat: new Date().toISOString(),
-    },
-    agents: [
-      {
-        id: 'main',
-        name: 'Main Session',
-        model: 'openrouter/anthropic/claude-haiku-4-5',
-        status: 'active',
-        tasksCompleted: 0,
+type AgentSummary = {
+  agentId: string
+  key: string
+  kind: string
+  age: number
+  model?: string
+  percentUsed?: number
+  inputTokens?: number
+  outputTokens?: number
+  totalTokens?: number
+}
+
+type StatusResponse =
+  | {
+      dataSource: 'openclaw_status_json'
+      available: true
+      openclaw: {
+        reachable: true
+        dashboardUrl?: string
+        gatewayBind?: string
+        tailscale?: string
+        heartbeatEvery?: string
+        sessionCount?: number
+        defaultModel?: string
+      }
+      sessions: AgentSummary[]
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'openclaw_status_json'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+export default async function handler(req: NextApiRequest, res: NextApiResponse<StatusResponse>) {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
+  res.setHeader('Pragma', 'no-cache')
+
+  try {
+    const { execFile } = await import('child_process')
+
+    const out: string = await new Promise((resolve, reject) => {
+      execFile('openclaw', ['status', '--json'], { timeout: 5000 }, (err, stdout, stderr) => {
+        if (err) return reject(new Error(stderr || err.message))
+        resolve(stdout)
+      })
+    })
+
+    const data = JSON.parse(out)
+
+    const heartbeatEvery = data?.heartbeat?.agents?.[0]?.every
+    const defaultModel = data?.sessions?.defaults?.model
+
+    const sessions: AgentSummary[] = (data?.sessions?.recent || []).map((s: any) => ({
+      agentId: s.agentId,
+      key: s.key,
+      kind: s.kind,
+      age: s.age,
+      model: s.model,
+      percentUsed: s.percentUsed,
+      inputTokens: s.inputTokens,
+      outputTokens: s.outputTokens,
+      totalTokens: s.totalTokens,
+    }))
+
+    return res.status(200).json({
+      dataSource: 'openclaw_status_json',
+      available: true,
+      openclaw: {
+        reachable: true,
+        dashboardUrl: data?.dashboardUrl,
+        gatewayBind: data?.gateway?.bind,
+        tailscale: data?.tailscale?.state || data?.tailscale || undefined,
+        heartbeatEvery,
+        sessionCount: data?.sessions?.count,
+        defaultModel,
       },
-      {
-        id: 'isolated-research',
-        name: 'Research Agent',
-        model: 'openrouter/anthropic/claude-sonnet-4.6',
-        status: 'active',
-        tasksCompleted: 0,
-      },
-      {
-        id: 'isolated-code',
-        name: 'Code Agent',
-        model: 'openrouter/anthropic/claude-opus-4-6',
-        status: 'active',
-        tasksCompleted: 0,
-      },
-    ],
-  })
+      sessions,
+      lastUpdated: new Date().toISOString(),
+    })
+  } catch (err: any) {
+    return res.status(200).json({
+      dataSource: 'openclaw_status_json',
+      available: false,
+      reason: `Failed to run openclaw status --json: ${err?.message || String(err)}`,
+      lastUpdated: new Date().toISOString(),
+    })
+  }
 }
