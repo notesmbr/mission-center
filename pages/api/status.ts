@@ -40,14 +40,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   res.setHeader('Pragma', 'no-cache')
 
   try {
-    const { execFile } = await import('child_process')
+    const { runOpenClawCommand } = await import('./_lib/openclaw')
 
-    const out: string = await new Promise((resolve, reject) => {
-      execFile('openclaw', ['status', '--json'], { timeout: 5000 }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message))
-        resolve(stdout)
-      })
-    })
+    const out: string = await runOpenClawCommand(['status', '--json'], 5000)
 
     const data = JSON.parse(out)
 

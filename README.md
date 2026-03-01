@@ -1,4 +1,4 @@
-# 🌊 Samoas Control - OpenClaw Local Dashboard
+# 🌊 Mission Center - OpenClaw Local Dashboard
 
 Real-time **local-only** monitoring for OpenClaw agents, cron jobs, and trader activity.
 
@@ -54,7 +54,7 @@ Or use the helper script (binds to 127.0.0.1):
 
 ## Deployment
 
-Deployment configs are kept for reference, but Samoas Control is intended to run locally on the same host as OpenClaw.
+Deployment configs are kept for reference, but Mission Center is intended to run locally on the same host as OpenClaw.
 
 ## License
 

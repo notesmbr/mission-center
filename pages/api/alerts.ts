@@ -88,13 +88,10 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
 
     const alerts: Alert[] = []
 
+    const { runOpenClawCommand } = await import('./_lib/openclaw')
+
     // 1) Cron job health
-    const cronOut: string = await new Promise((resolve, reject) => {
-      execFile('openclaw', ['cron', 'list', '--json'], { timeout: 8000 }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message))
-        resolve(stdout)
-      })
-    })
+    const cronOut: string = await runOpenClawCommand(['cron', 'list', '--json'], 8000)
     const cron = JSON.parse(cronOut)
     const jobs: any[] = cron?.jobs || []
 
@@ -124,12 +121,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       const cfg = JSON.parse(fs.readFileSync(OPENCLAW_CONFIG_PATH, 'utf-8'))
       const required = requiredModelKeysFromConfig(cfg)
 
-      const modelsOut: string = await new Promise((resolve, reject) => {
-        execFile('openclaw', ['models', 'list', '--json'], { timeout: 8000 }, (err, stdout, stderr) => {
-          if (err) return reject(new Error(stderr || err.message))
-          resolve(stdout)
-        })
-      })
+      const modelsOut: string = await runOpenClawCommand(['models', 'list', '--json'], 8000)
       const models = JSON.parse(modelsOut)
       const list: any[] = models?.models || []
       const byKey = new Map<string, any>(list.map((m) => [m.key, m]))

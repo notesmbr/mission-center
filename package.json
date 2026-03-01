@@ -1,7 +1,7 @@
 {
   "name": "mission-center",
   "version": "1.1.0",
-  "description": "Samoas Control OpenClaw Dashboard",
+  "description": "Mission Center OpenClaw Dashboard",
   "scripts": {
     "dev": "next dev -H 127.0.0.1",
     "build": "next build",

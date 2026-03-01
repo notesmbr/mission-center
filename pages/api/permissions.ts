@@ -43,7 +43,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
     },
     activeProjects: [
       {
-        name: 'Samoas Control',
+        name: 'Mission Center',
         status: 'active',
         url: 'http://localhost:3000',
         repo: 'https://github.com/notesmbr/mission-center',

@@ -29,14 +29,9 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   }
 
   try {
-    const { execFile } = await import('child_process')
+    const { runOpenClawCommand } = await import('../_lib/openclaw')
 
-    const out: string = await new Promise((resolve, reject) => {
-      execFile('openclaw', ['cron', 'runs', '--id', id, '--limit', '50'], { timeout: 10000 }, (err, stdout, stderr) => {
-        if (err) return reject(new Error(stderr || err.message))
-        resolve(stdout)
-      })
-    })
+    const out: string = await runOpenClawCommand(['cron', 'runs', '--id', id, '--limit', '50'], 10000)
 
     const data = JSON.parse(out)
     return res.status(200).json({

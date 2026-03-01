@@ -1,6 +1,6 @@
-# Samoas Control - Setup Guide
+# Mission Center - Setup Guide
 
-Samoas Control is intended to run **locally** on the same host as OpenClaw.
+Mission Center is intended to run **locally** on the same host as OpenClaw.
 
 ## Quick Start
 

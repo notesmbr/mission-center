@@ -4,8 +4,8 @@ set -euo pipefail
 WORKDIR="/Users/notesmbr/.openclaw/workspace/mission-center"
 HOST="127.0.0.1"
 PORT="3000"
-LOG_FILE="/tmp/samoas-control-dev.log"
-PID_FILE="/tmp/samoas-control-dev.pid"
+LOG_FILE="/tmp/mission-center-dev.log"
+PID_FILE="/tmp/mission-center-dev.pid"
 
 # Ensure Next dev server is running on localhost only
 if ! curl -fsS --max-time 2 "http://${HOST}:${PORT}/" >/dev/null 2>&1; then
@@ -26,4 +26,4 @@ if ! curl -fsS --max-time 2 "http://${HOST}:${PORT}/" >/dev/null 2>&1; then
   done
 fi
 
-echo "Samoas Control running at http://${HOST}:${PORT}/"
+echo "Mission Center running at http://${HOST}:${PORT}/"
