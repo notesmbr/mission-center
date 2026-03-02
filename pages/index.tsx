@@ -23,6 +23,89 @@ type TasksListData =
       lastUpdated: string
     }
 
+type TaskDetailsData =
+  | {
+      dataSource: 'clawdbot_task_details'
+      available: true
+      task: any
+      log: { available: true; path: string; tail: string; lineCount: number } | { available: false; reason: string }
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'clawdbot_task_details'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+
+type SwarmTask = {
+  id: string
+  projectId?: string
+  description?: string
+  agent?: string
+  status: string
+  attempts?: number
+  maxAttempts?: number
+  updatedAt?: number
+  createdAt?: number
+  branch?: string
+  tmuxSession?: string
+  worktree?: string
+  note?: string
+}
+
+type SwarmStatusData =
+  | {
+      dataSource: 'clawdbot_swarm_status'
+      available: true
+      summary: {
+        total: number
+        queued: number
+        running: number
+        needs_attention: number
+        done: number
+        failed: number
+      }
+      tasks: SwarmTask[]
+      groupedTasks: Array<{
+        projectId: string
+        projectName?: string
+        tasks: SwarmTask[]
+      }>
+      projects: Array<{ id: string; name?: string; enabled?: boolean }>
+      filters: {
+        projectIds: string[]
+        agents: string[]
+        statuses: string[]
+      }
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'clawdbot_swarm_status'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+type SwarmTaskDetailsData =
+  | {
+      dataSource: 'clawdbot_swarm_task_details'
+      available: true
+      task: SwarmTask
+      tmuxAttachCommand: string | null
+      log:
+        | { available: true; path: string; tail: string; lineCount: number }
+        | { available: false; reason: string }
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'clawdbot_swarm_task_details'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
 type CronListData =
   | { dataSource: 'openclaw_cron_list'; available: true; jobs: any[]; lastUpdated: string }
   | { dataSource: 'openclaw_cron_list'; available: false; reason: string; lastUpdated: string }
@@ -189,6 +272,20 @@ function isoToReadable(iso?: string): string {
   return new Date(ts).toLocaleString()
 }
 
+function msToHuman(ms?: number): string {
+  if (!ms) return 'n/a'
+  return `${new Date(ms).toLocaleString()} (${msToRelative(ms)})`
+}
+
+function taskStatusClass(status?: string): string {
+  if (status === 'running') return 'bg-blue-900/60 text-blue-200 border-blue-800'
+  if (status === 'queued') return 'bg-slate-700/60 text-slate-200 border-slate-600'
+  if (status === 'needs_attention') return 'bg-rose-900/60 text-rose-200 border-rose-800'
+  if (status === 'done') return 'bg-emerald-900/60 text-emerald-200 border-emerald-800'
+  if (status === 'failed') return 'bg-red-900/60 text-red-200 border-red-800'
+  return 'bg-slate-800 text-slate-200 border-slate-600'
+}
+
 function scheduleLabel(job: any): string {
   const sch = job?.schedule
   if (!sch) return 'n/a'
@@ -234,6 +331,18 @@ export default function Home() {
   const [maintenanceLog, setMaintenanceLog] = useState<LogData | null>(null)
   const [traderLog, setTraderLog] = useState<LogData | null>(null)
 
+
+  const [swarmStatusData, setSwarmStatusData] = useState<SwarmStatusData | null>(null)
+  const [selectedSwarmTaskId, setSelectedSwarmTaskId] = useState<string>('')
+  const [swarmTaskDetails, setSwarmTaskDetails] = useState<SwarmTaskDetailsData | null>(null)
+  const [swarmTaskDetailsLoading, setSwarmTaskDetailsLoading] = useState(false)
+  const [swarmProjectFilter, setSwarmProjectFilter] = useState<string>('all')
+  const [swarmStatusFilter, setSwarmStatusFilter] = useState<string>('all')
+  const [swarmAgentFilter, setSwarmAgentFilter] = useState<string>('all')
+  const [swarmSearch, setSwarmSearch] = useState<string>('')
+  const [swarmLastRefreshedAt, setSwarmLastRefreshedAt] = useState<number | null>(null)
+  const [copyNotice, setCopyNotice] = useState<string>('')
+
   const [selectedProject, setSelectedProject] = useState<string>('all')
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
@@ -244,6 +353,17 @@ export default function Home() {
   const safeFetchJson = async (url: string) => {
     const response = await fetch(url)
     return response.json()
+  }
+
+
+  const refreshSwarmStatus = async () => {
+    try {
+      const data = await safeFetchJson('/api/swarm/status')
+      setSwarmStatusData(data)
+      setSwarmLastRefreshedAt(Date.now())
+    } catch (e) {
+      console.error('refreshSwarmStatus failed', e)
+    }
   }
 
   useEffect(() => {
@@ -327,6 +447,45 @@ export default function Home() {
     return ['all', ...Array.from(set).sort()]
   }, [cronList, tasksList])
 
+
+  useEffect(() => {
+    if (!selectedSwarmTaskId) {
+      setSwarmTaskDetails(null)
+      setSwarmTaskDetailsLoading(false)
+      return
+    }
+
+    let cancelled = false
+
+    const fetchSwarmTaskDetails = async () => {
+      setSwarmTaskDetailsLoading(true)
+      try {
+        const response = await fetch(`/api/swarm/task-details?id=${encodeURIComponent(selectedSwarmTaskId)}`)
+        const data = await response.json()
+        if (!cancelled) setSwarmTaskDetails(data)
+      } catch (_err) {
+        if (!cancelled) {
+          setSwarmTaskDetails({
+            dataSource: 'clawdbot_swarm_task_details',
+            available: false,
+            reason: 'Failed to load task details.',
+            lastUpdated: new Date().toISOString(),
+          })
+        }
+      } finally {
+        if (!cancelled) setSwarmTaskDetailsLoading(false)
+      }
+    }
+
+    fetchSwarmTaskDetails()
+    const interval = setInterval(fetchSwarmTaskDetails, 10000)
+    return () => {
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [selectedSwarmTaskId])
+
+
   const filteredJobs = useMemo(() => {
     const jobs = cronList && cronList.available ? cronList.jobs : []
     if (selectedProject === 'all') return jobs
@@ -397,6 +556,93 @@ export default function Home() {
     return { queued, running, needsAttention, done, failed, unknown }
   }, [filteredTasks])
 
+  const swarmTasks = useMemo(() => {
+    if (!swarmStatusData || !swarmStatusData.available) return []
+    return swarmStatusData.tasks || []
+  }, [swarmStatusData])
+
+  const swarmProjectOptions = useMemo(() => {
+    if (!swarmStatusData || !swarmStatusData.available) return ['all']
+    const set = new Set<string>()
+    for (const project of swarmStatusData.projects || []) {
+      if (project?.id) set.add(project.id)
+    }
+    for (const task of swarmStatusData.tasks || []) {
+      set.add(task.projectId || 'unassigned')
+    }
+    return ['all', ...Array.from(set).sort()]
+  }, [swarmStatusData])
+
+  const swarmAgentOptions = useMemo(() => {
+    const set = new Set<string>()
+    for (const task of swarmTasks) {
+      if (task.agent) set.add(task.agent)
+    }
+    return ['all', ...Array.from(set).sort()]
+  }, [swarmTasks])
+
+  const filteredSwarmTasks = useMemo(() => {
+    const q = swarmSearch.trim().toLowerCase()
+    return swarmTasks.filter((task) => {
+      const project = task.projectId || 'unassigned'
+      const status = task.status || 'unknown'
+      const agent = task.agent || 'unknown'
+
+      if (swarmProjectFilter !== 'all' && project !== swarmProjectFilter) return false
+      if (swarmStatusFilter !== 'all' && status !== swarmStatusFilter) return false
+      if (swarmAgentFilter !== 'all' && agent !== swarmAgentFilter) return false
+      if (!q) return true
+
+      const idHit = task.id.toLowerCase().includes(q)
+      const descHit = (task.description || '').toLowerCase().includes(q)
+      return idHit || descHit
+    })
+  }, [swarmTasks, swarmProjectFilter, swarmStatusFilter, swarmAgentFilter, swarmSearch])
+
+  const filteredSwarmSummary = useMemo(() => {
+    let queued = 0
+    let running = 0
+    let needsAttention = 0
+    let done = 0
+    let failed = 0
+
+    for (const task of filteredSwarmTasks) {
+      if (task.status === 'queued') queued += 1
+      else if (task.status === 'running') running += 1
+      else if (task.status === 'needs_attention') needsAttention += 1
+      else if (task.status === 'done') done += 1
+      else if (task.status === 'failed') failed += 1
+    }
+
+    return {
+      total: filteredSwarmTasks.length,
+      queued,
+      running,
+      needs_attention: needsAttention,
+      done,
+      failed,
+    }
+  }, [filteredSwarmTasks])
+
+  const groupedFilteredSwarmTasks = useMemo(() => {
+    const grouped = new Map<string, SwarmTask[]>()
+    for (const task of filteredSwarmTasks) {
+      const key = task.projectId || 'unassigned'
+      const list = grouped.get(key)
+      if (list) list.push(task)
+      else grouped.set(key, [task])
+    }
+
+    return Array.from(grouped.entries())
+      .map(([projectId, tasks]) => ({
+        projectId,
+        projectName:
+          swarmStatusData && swarmStatusData.available ? swarmStatusData.projects.find((p) => p.id === projectId)?.name : undefined,
+        tasks: tasks.sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)),
+      }))
+      .sort((a, b) => a.projectId.localeCompare(b.projectId))
+  }, [filteredSwarmTasks, swarmStatusData])
+
   const openclawSummary = useMemo(() => {
     if (!openclawStatus) return null
     if (!openclawStatus.available) return null
@@ -460,6 +706,332 @@ export default function Home() {
       console.error('Failed to copy session key', err)
     }
   }
+
+const SwarmStatusView = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div className="text-white text-lg font-semibold">Swarm Status</div>
+        <div className="flex items-center gap-3">
+          <button onClick={refreshSwarmStatus} className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800">
+            Refresh
+          </button>
+          <div className="text-slate-500 text-xs">
+            auto-refreshes every 10s • last refreshed {swarmLastRefreshedAt ? new Date(swarmLastRefreshedAt).toLocaleTimeString() : 'n/a'}
+          </div>
+        </div>
+      </div>
+
+      {!swarmStatusData ? (
+        <div className="card">
+          <div className="text-white font-semibold">Swarm status unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
+        </div>
+      ) : !swarmStatusData.available ? (
+        <div className="card">
+          <div className="text-white font-semibold">Swarm status unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">{swarmStatusData.reason}</div>
+        </div>
+      ) : (
+        <>
+          <div className="card">
+            <div className="text-white font-semibold">Filters</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+              <div>
+                <label className="text-slate-500 text-xs block mb-1">Project</label>
+                <select
+                  value={swarmProjectFilter}
+                  onChange={(e) => setSwarmProjectFilter(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                >
+                  {swarmProjectOptions.map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-500 text-xs block mb-1">Status</label>
+                <select
+                  value={swarmStatusFilter}
+                  onChange={(e) => setSwarmStatusFilter(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                >
+                  <option value="all">all</option>
+                  <option value="queued">queued</option>
+                  <option value="running">running</option>
+                  <option value="needs_attention">needs_attention</option>
+                  <option value="done">done</option>
+                  <option value="failed">failed</option>
+                  <option value="unknown">unknown</option>
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-500 text-xs block mb-1">Agent</label>
+                <select
+                  value={swarmAgentFilter}
+                  onChange={(e) => setSwarmAgentFilter(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                >
+                  {swarmAgentOptions.map((agent) => (
+                    <option key={agent} value={agent}>
+                      {agent}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-slate-500 text-xs block mb-1">Search (id / description)</label>
+                <input
+                  type="text"
+                  value={swarmSearch}
+                  onChange={(e) => setSwarmSearch(e.target.value)}
+                  placeholder="mission-center..."
+                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                />
+              </div>
+            </div>
+            <div className="text-slate-500 text-xs mt-2">
+              Showing {filteredSwarmTasks.length} of {swarmStatusData.summary.total} task(s). Last payload: {swarmStatusData.lastUpdated}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+            <div className="card">
+              <div className="text-slate-400 text-xs">total</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.total}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">queued</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.queued}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">running</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.running}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">needs_attention</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.needs_attention}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">done</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.done}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">failed</div>
+              <div className="text-2xl font-bold mt-2">{filteredSwarmSummary.failed}</div>
+            </div>
+          </div>
+
+          {groupedFilteredSwarmTasks.length === 0 ? (
+            <div className="card">
+              <div className="text-white font-semibold">No matching tasks</div>
+              <div className="text-slate-400 text-sm mt-1">Adjust filters or search to broaden the results.</div>
+            </div>
+          ) : (
+            groupedFilteredSwarmTasks.map((group) => (
+              <div key={group.projectId} className="card p-0 overflow-hidden">
+                <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+                  <div>
+                    <div className="text-white font-semibold">{group.projectName || group.projectId}</div>
+                    <div className="text-slate-500 text-xs mt-1">projectId: {group.projectId}</div>
+                  </div>
+                  <div className="text-slate-400 text-sm">{group.tasks.length} task(s)</div>
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="min-w-[1280px] w-full text-xs">
+                    <thead className="bg-slate-900/70">
+                      <tr className="text-slate-400">
+                        <th className="text-left px-3 py-2 font-medium">id</th>
+                        <th className="text-left px-3 py-2 font-medium">description</th>
+                        <th className="text-left px-3 py-2 font-medium">agent</th>
+                        <th className="text-left px-3 py-2 font-medium">status</th>
+                        <th className="text-left px-3 py-2 font-medium">attempts</th>
+                        <th className="text-left px-3 py-2 font-medium">updatedAt</th>
+                        <th className="text-left px-3 py-2 font-medium">branch</th>
+                        <th className="text-left px-3 py-2 font-medium">tmuxSession</th>
+                        <th className="text-left px-3 py-2 font-medium">worktree</th>
+                        <th className="text-left px-3 py-2 font-medium">note</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {group.tasks.map((task) => (
+                        <tr
+                          key={task.id}
+                          className="border-t border-slate-800 hover:bg-slate-900/60 cursor-pointer"
+                          onClick={() => {
+                            setCopyNotice('')
+                            setSelectedSwarmTaskId(task.id)
+                          }}
+                        >
+                          <td className="px-3 py-2 text-slate-100 whitespace-nowrap">{task.id}</td>
+                          <td className="px-3 py-2 text-slate-200 max-w-[300px] truncate" title={task.description || ''}>
+                            {task.description || 'n/a'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-200 whitespace-nowrap">{task.agent || 'n/a'}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-block px-2 py-0.5 rounded border ${taskStatusClass(task.status)}`}>{task.status || 'unknown'}</span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-200 whitespace-nowrap">{task.attempts ?? 0} / {task.maxAttempts ?? '?'}</td>
+                          <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{msToHuman(task.updatedAt || task.createdAt)}</td>
+                          <td className="px-3 py-2 text-slate-300 max-w-[200px] truncate" title={task.branch || ''}>
+                            {task.branch || 'n/a'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 max-w-[180px] truncate" title={task.tmuxSession || ''}>
+                            {task.tmuxSession || 'n/a'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 max-w-[300px] truncate" title={task.worktree || ''}>
+                            {task.worktree || 'n/a'}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 max-w-[280px] truncate" title={task.note || ''}>
+                            {task.note || 'n/a'}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ))
+          )}
+        </>
+      )}
+
+      {selectedSwarmTaskId && (
+        <div
+          className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm p-4 md:p-6"
+          onClick={() => {
+            setCopyNotice('')
+            setSelectedSwarmTaskId('')
+          }}
+        >
+          <div
+            className="mx-auto w-full max-w-5xl max-h-full overflow-hidden bg-slate-900 border border-slate-700 rounded-xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
+              <div className="min-w-0">
+                <div className="text-white font-semibold truncate">Task details</div>
+                <div className="text-slate-400 text-xs truncate">{selectedSwarmTaskId}</div>
+              </div>
+              <button
+                onClick={() => {
+                  setCopyNotice('')
+                  setSelectedSwarmTaskId('')
+                }}
+                className="text-slate-300 hover:text-white text-sm border border-slate-600 rounded px-2 py-1"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto max-h-[75vh] space-y-4">
+              {swarmTaskDetailsLoading && !swarmTaskDetails && <div className="text-slate-400 text-sm">Loading details...</div>}
+              {swarmTaskDetailsLoading && swarmTaskDetails && <div className="text-slate-500 text-xs">Refreshing details...</div>}
+
+              {!swarmTaskDetailsLoading && !swarmTaskDetails && <div className="text-slate-400 text-sm">No task details payload.</div>}
+
+              {swarmTaskDetails && !swarmTaskDetails.available && <div className="text-rose-200 text-sm">{swarmTaskDetails.reason}</div>}
+
+              {swarmTaskDetails && swarmTaskDetails.available && (
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">id</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.id}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">projectId</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.projectId || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">description</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.description || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">agent</div>
+                      <div className="text-slate-100 mt-1">{swarmTaskDetails.task.agent || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">status</div>
+                      <div className="mt-1">
+                        <span className={`inline-block px-2 py-0.5 rounded border ${taskStatusClass(swarmTaskDetails.task.status)}`}>
+                          {swarmTaskDetails.task.status || 'unknown'}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">attempts / maxAttempts</div>
+                      <div className="text-slate-100 mt-1">{swarmTaskDetails.task.attempts ?? 0} / {swarmTaskDetails.task.maxAttempts ?? '?'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">updatedAt</div>
+                      <div className="text-slate-100 mt-1">{msToHuman(swarmTaskDetails.task.updatedAt || swarmTaskDetails.task.createdAt)}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">branch</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.branch || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">tmuxSession</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.tmuxSession || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">worktree</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.worktree || 'n/a'}</div>
+                    </div>
+                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                      <div className="text-slate-500 text-xs">note</div>
+                      <div className="text-slate-100 mt-1 break-all">{swarmTaskDetails.task.note || 'n/a'}</div>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <div className="text-white font-semibold">tmux attach command</div>
+                        <div className="text-slate-400 text-xs mt-1">{swarmTaskDetails.tmuxAttachCommand || 'No tmux session available.'}</div>
+                      </div>
+                      <button
+                        disabled={!swarmTaskDetails.tmuxAttachCommand}
+                        onClick={async () => {
+                          if (!swarmTaskDetails.tmuxAttachCommand) return
+                          try {
+                            await navigator.clipboard.writeText(swarmTaskDetails.tmuxAttachCommand)
+                            setCopyNotice('Copied.')
+                          } catch {
+                            setCopyNotice('Copy failed.')
+                          }
+                        }}
+                        className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Copy tmux attach command
+                      </button>
+                    </div>
+                    {copyNotice && <div className="text-slate-400 text-xs mt-2">{copyNotice}</div>}
+                  </div>
+
+                  <div className="card">
+                    <div className="text-white font-semibold">Session log tail (~80 lines)</div>
+                    {swarmTaskDetails.log.available ? (
+                      <>
+                        <div className="text-slate-500 text-xs mt-1">{swarmTaskDetails.log.path}</div>
+                        <pre className="text-xs text-slate-200 mt-3 whitespace-pre-wrap overflow-x-auto">{swarmTaskDetails.log.tail || '(log is empty)'}</pre>
+                      </>
+                    ) : (
+                      <div className="text-slate-400 text-sm mt-2">{swarmTaskDetails.log.reason}</div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  )
+
 
   if (loading) {
     return (
@@ -593,6 +1165,8 @@ export default function Home() {
                   </div>
                 </div>
               )}
+              {/* SWARM STATUS */}
+              {activeTab === 'swarm' && <SwarmStatusView />}
 
               {/* TASKS */}
               {activeTab === 'tasks' && (
