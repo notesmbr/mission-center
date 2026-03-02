@@ -96,6 +96,24 @@ type CronRunsData =
   | { dataSource: 'openclaw_cron_runs'; available: true; entries: any[]; lastUpdated: string }
   | { dataSource: 'openclaw_cron_runs'; available: false; reason: string; lastUpdated: string }
 
+
+
+type ProjectDoc = { kind: 'repo' | 'vault'; path: string; title: string | null; excerpt: string; updatedAtMs: number | null }
+
+type ProjectSummary = {
+  id: string
+  name?: string
+  enabled?: boolean
+  repoRelative?: string
+  summary: { total: number; queued: number; running: number; needs_attention: number; done: number; failed: number; unknown: number }
+  tasks: any[]
+  docs: ProjectDoc[]
+}
+
+type ProjectsSummaryData =
+  | { dataSource: 'clawdbot_projects_summary'; available: true; projects: ProjectSummary[]; lastUpdated: string }
+  | { dataSource: 'clawdbot_projects_summary'; available: false; reason: string; lastUpdated: string }
+
 type AnyJson = any
 
 function msToRelative(ms?: number): string {
@@ -163,6 +181,7 @@ export default function Home() {
   const [agentsData, setAgentsData] = useState<AgentsListData | null>(null)
   const [swarmData, setSwarmData] = useState<SwarmStatusData | null>(null)
   const [cronData, setCronData] = useState<CronListData | null>(null)
+  const [projectsData, setProjectsData] = useState<ProjectsSummaryData | null>(null)
 
   const [loading, setLoading] = useState(true)
 
@@ -192,14 +211,16 @@ export default function Home() {
         safeFetchJson('/api/agents/list'),
         safeFetchJson('/api/swarm/status'),
         safeFetchJson('/api/cron/list'),
+        safeFetchJson('/api/projects/summary'),
       ])
 
-      const [statusRes, agentsRes, swarmRes, cronRes] = results
+      const [statusRes, agentsRes, swarmRes, cronRes, projectsRes] = results
 
       if (statusRes.status === 'fulfilled') setStatusData(statusRes.value)
       if (agentsRes.status === 'fulfilled') setAgentsData(agentsRes.value)
       if (swarmRes.status === 'fulfilled') setSwarmData(swarmRes.value)
       if (cronRes.status === 'fulfilled') setCronData(cronRes.value)
+      if (projectsRes.status === 'fulfilled') setProjectsData(projectsRes.value)
 
       setLastRefreshedAt(Date.now())
     } finally {
@@ -515,6 +536,146 @@ export default function Home() {
     </div>
   )
 
+
+
+  const ProjectsView = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-white text-lg font-semibold">Projects</div>
+          <div className="text-slate-500 text-xs">Big-picture context + current work by project</div>
+        </div>
+        <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
+      </div>
+
+      {!projectsData ? (
+        <div className="card">
+          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
+        </div>
+      ) : !projectsData.available ? (
+        <div className="card">
+          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">{projectsData.reason}</div>
+        </div>
+      ) : projectsData.projects.length === 0 ? (
+        <div className="card">
+          <div className="text-white font-semibold">No projects configured</div>
+          <div className="text-slate-400 text-sm mt-1">Add projects in .clawdbot/config.json.</div>
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {projectsData.projects
+            .filter((p) => selectedProject === 'all' || p.id === selectedProject)
+            .map((p) => {
+              const tasks = (p.tasks || []) as any[]
+              const needs = tasks.filter((t) => t.status === 'needs_attention' || t.status === 'failed')
+              const running = tasks.filter((t) => t.status === 'running')
+
+              return (
+                <div key={p.id} className="card">
+                  <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-white text-lg font-semibold truncate">{p.name || p.id}</div>
+                      <div className="text-slate-500 text-xs mt-1 truncate">projectId: {p.id}{p.repoRelative ? ` • repo: ${p.repoRelative}` : ''}</div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="bg-slate-950/40 border border-slate-700 rounded-lg px-3 py-2">
+                        <div className="text-slate-500 text-[11px]">running</div>
+                        <div className="text-slate-100 font-semibold">{p.summary.running}</div>
+                      </div>
+                      <div className="bg-slate-950/40 border border-slate-700 rounded-lg px-3 py-2">
+                        <div className="text-slate-500 text-[11px]">needs attention</div>
+                        <div className="text-rose-200 font-semibold">{p.summary.needs_attention + p.summary.failed}</div>
+                      </div>
+                      <div className="bg-slate-950/40 border border-slate-700 rounded-lg px-3 py-2">
+                        <div className="text-slate-500 text-[11px]">total</div>
+                        <div className="text-slate-100 font-semibold">{p.summary.total}</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {(running.length > 0 || needs.length > 0) && (
+                    <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
+                      <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
+                        <div className="text-white font-semibold">Running</div>
+                        {running.length === 0 ? (
+                          <div className="text-slate-400 text-sm mt-2">None</div>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {running.slice(0, 6).map((t) => (
+                              <button
+                                key={t.id}
+                                onClick={() => {
+                                  setActiveTab('tasks')
+                                  setSelectedProject(p.id)
+                                  setSelectedTaskId(t.id)
+                                }}
+                                className="w-full text-left bg-slate-950/40 border border-slate-700 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
+                                <div className="text-slate-100 font-medium">{t.description || t.id}</div>
+                                <div className="text-slate-500 text-xs mt-1">{t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
+                        <div className="text-white font-semibold">Needs attention</div>
+                        {needs.length === 0 ? (
+                          <div className="text-slate-400 text-sm mt-2">None</div>
+                        ) : (
+                          <div className="mt-2 space-y-2">
+                            {needs.slice(0, 6).map((t) => (
+                              <button
+                                key={t.id}
+                                onClick={() => {
+                                  setActiveTab('tasks')
+                                  setSelectedProject(p.id)
+                                  setSelectedTaskId(t.id)
+                                }}
+                                className="w-full text-left bg-slate-950/40 border border-slate-700 rounded-lg p-3 hover:bg-slate-950/70"
+                              >
+                                <div className="text-slate-100 font-medium">{t.description || t.id}</div>
+                                <div className="text-slate-500 text-xs mt-1">{t.status} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
+                                {t.note && <div className="text-slate-400 text-xs mt-2 truncate">{t.note}</div>}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-4">
+                    <div className="text-white font-semibold">Project context</div>
+                    <div className="text-slate-500 text-xs mt-1">Pulled from README/AppStoreAssets and (optionally) .clawdbot/projects vault files.</div>
+
+                    {p.docs.length === 0 ? (
+                      <div className="text-slate-400 text-sm mt-2">No context docs found yet.</div>
+                    ) : (
+                      <div className="mt-3 space-y-3">
+                        {p.docs.slice(0, 6).map((d) => (
+                          <details key={d.path} className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
+                            <summary className="cursor-pointer text-slate-100 text-sm font-medium">
+                              {d.title || d.path} <span className="text-slate-500 text-xs">({d.kind})</span>
+                            </summary>
+                            <div className="text-slate-500 text-xs mt-2">{d.path}{d.updatedAtMs ? ` • updated ${msToHuman(d.updatedAtMs)}` : ''}</div>
+                            <pre className="text-xs text-slate-200 mt-3 whitespace-pre-wrap">{d.excerpt}</pre>
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )
+            })}
+        </div>
+      )}
+    </div>
+  )
   const TasksView = () => (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -971,6 +1132,7 @@ export default function Home() {
 
             <main className="px-4 md:px-6 py-6">
               {activeTab === 'overview' && <OverviewView />}
+              {activeTab === 'projects' && <ProjectsView />}
               {activeTab === 'tasks' && <TasksView />}
               {activeTab === 'jobs' && <JobsView />}
               {activeTab === 'agents' && <AgentsView />}

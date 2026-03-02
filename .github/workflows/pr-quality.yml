@@ -80,7 +80,7 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps
+      - run: npx playwright install
       - run: npm run test:playwright --if-present
 
   ui-screenshot-required:
