@@ -7,7 +7,7 @@
     "build": "next build --no-lint",
     "start": "next start -H 127.0.0.1",
     "lint": "node scripts/run-lint-if-available.js",
-    "test": "node --import tsx --test tests/**/*.test.mts"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "react": "^18.2.0",
