@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict'
 import path from 'node:path'
 import test from 'node:test'
-import {
+
+import tasksLib from '../lib/tasks.ts'
+
+const {
   CLAW_WORKTREES_DIR,
   matchesProjectFilter,
   normalizeTaskStatus,
@@ -10,7 +13,7 @@ import {
   resolveTaskSessionLogPath,
   sanitizeTask,
   tailLines,
-} from '../lib/tasks.ts'
+} = tasksLib
 
 test('normalizeTaskStatus maps known and unknown values', () => {
   assert.equal(normalizeTaskStatus('queued'), 'queued')

@@ -7,7 +7,7 @@
     "build": "next build --no-lint",
     "start": "next start -H 127.0.0.1",
     "lint": "node scripts/run-lint-if-available.js",
-    "test": "node --experimental-strip-types --test tests/**/*.test.mts"
+    "test": "node --import tsx --test tests/**/*.test.mts"
   },
   "dependencies": {
     "react": "^18.2.0",
@@ -23,6 +23,7 @@
     "@types/node": "^20.0.0",
     "tailwindcss": "^3.3.0",
     "postcss": "^8.4.31",
-    "autoprefixer": "^10.4.16"
+    "autoprefixer": "^10.4.16",
+    "tsx": "^4.19.2"
   }
 }

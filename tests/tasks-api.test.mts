@@ -1,8 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { matchesProjectFilter, sanitizeTask, sanitizeTasks } from '../lib/tasks.ts'
-import { buildTaskDetailsResponse, isValidTaskId, type TaskDetailsDependencies } from '../pages/api/tasks/details.ts'
-import { __resetTasksSyncThrottleForTests, buildTasksListResponse, type TasksListDependencies } from '../pages/api/tasks/list.ts'
+
+import tasksLib from '../lib/tasks.ts'
+import listApi from '../pages/api/tasks/list.ts'
+import detailsApi from '../pages/api/tasks/details.ts'
+
+import type { TaskDetailsDependencies } from '../pages/api/tasks/details.ts'
+import type { TasksListDependencies } from '../pages/api/tasks/list.ts'
+
+const { matchesProjectFilter, sanitizeTask, sanitizeTasks } = tasksLib
+const { __resetTasksSyncThrottleForTests, buildTasksListResponse } = listApi
+const { buildTaskDetailsResponse, isValidTaskId } = detailsApi
 
 test('buildTasksListResponse rejects non-GET requests', async () => {
   const deps: TasksListDependencies = {
