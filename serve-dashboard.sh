@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WORKDIR="/Users/notesmbr/.openclaw/workspace/mission-center"
+WORKDIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 HOST="127.0.0.1"
 PORT="3000"
 LOG_FILE="/tmp/mission-center-dev.log"
