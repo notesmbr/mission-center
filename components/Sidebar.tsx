@@ -1,17 +1,12 @@
 import React from 'react'
 
-export type NavKey = 'overview' | 'tasks' | 'swarm' | 'alerts' | 'jobs' | 'agents' | 'logs' | 'usage' | 'debug'
+export type NavKey = 'overview' | 'tasks' | 'jobs' | 'agents'
 
 const NAV: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'overview', label: 'Overview', icon: '⌂' },
   { key: 'tasks', label: 'Tasks', icon: '☰' },
-  { key: 'swarm', label: 'Swarm Status', icon: '🕸' },
-  { key: 'alerts', label: 'Alert Inbox', icon: '⨯' },
-  { key: 'jobs', label: 'Jobs Board', icon: '⏱' },
-  { key: 'agents', label: 'Agents / Activity', icon: '⚙' },
-  { key: 'logs', label: 'Logs', icon: '🪵' },
-  { key: 'usage', label: 'Usage', icon: '📈' },
-  { key: 'debug', label: 'Truth / Debug', icon: '◧' },
+  { key: 'jobs', label: 'Jobs', icon: '⏱' },
+  { key: 'agents', label: 'Agents', icon: '⚙' },
 ]
 
 export default function Sidebar({
@@ -25,7 +20,7 @@ export default function Sidebar({
     <aside className="w-full md:w-72 shrink-0 border-b md:border-b-0 md:border-r border-slate-800 bg-slate-950/60">
       <div className="px-5 py-5 border-b border-slate-800">
         <div className="text-white text-lg font-semibold tracking-wide">Mission Center</div>
-        <div className="text-slate-400 text-xs mt-1">OpenClaw • local-only • accuracy-first</div>
+        <div className="text-slate-400 text-xs mt-1">OpenClaw • local-only • task-first</div>
       </div>
 
       <nav className="p-3">
@@ -49,7 +44,7 @@ export default function Sidebar({
       </nav>
 
       <div className="p-4 mt-auto border-t border-slate-800 text-xs text-slate-500">
-        <div>local-only v2</div>
+        <div>local-only</div>
       </div>
     </aside>
   )
