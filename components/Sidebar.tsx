@@ -1,9 +1,10 @@
 import React from 'react'
 
-export type NavKey = 'overview' | 'tasks' | 'jobs' | 'agents'
+export type NavKey = 'overview' | 'projects' | 'tasks' | 'jobs' | 'agents'
 
 const NAV: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'overview', label: 'Overview', icon: '⌂' },
+  { key: 'projects', label: 'Projects', icon: '▦' },
   { key: 'tasks', label: 'Tasks', icon: '☰' },
   { key: 'jobs', label: 'Jobs', icon: '⏱' },
   { key: 'agents', label: 'Agents', icon: '⚙' },
