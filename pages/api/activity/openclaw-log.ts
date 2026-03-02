@@ -56,6 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       redactTokenLikeStrings,
       resolveActivityLogIds,
       tailLines,
+      tailFileLines,
     } = await import('../_lib/activity')
 
     const selected = resolveActivityLogIds(stream)
@@ -87,13 +88,12 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         }
       }
 
-      const text = fs.readFileSync(path, 'utf-8')
-      const { lineCount, tail } = tailLines(text, perLogLines)
+      const { tail, lineCountEstimate } = tailFileLines(path, perLogLines)
       return {
         id,
         path,
         exists: true,
-        lineCount,
+        lineCount: lineCountEstimate,
         tail: redactTokenLikeStrings(tail),
       }
     })

@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 
 export const OPENCLAW_ACTIVITY_LOGS = {
@@ -25,6 +26,32 @@ export function tailLines(text: string, maxLines: number): { tail: string; lineC
   return {
     tail: lines.slice(-maxLines).join('\n'),
     lineCount: lines.length,
+  }
+}
+
+export function tailFileLines(
+  filePath: string,
+  maxLines: number,
+  maxBytes = 200_000
+): { tail: string; lineCountEstimate: number } {
+  // Efficient tail: read only the end of the file.
+  const stat = fs.statSync(filePath)
+  const size = stat.size
+  const start = Math.max(0, size - maxBytes)
+  const length = size - start
+
+  const fd = fs.openSync(filePath, 'r')
+  try {
+    const buf = Buffer.alloc(length)
+    fs.readSync(fd, buf, 0, length, start)
+    const text = buf.toString('utf-8')
+    const lines = text.split(/\r?\n/).filter((line) => line.length > 0)
+    return {
+      tail: lines.slice(-maxLines).join('\n'),
+      lineCountEstimate: lines.length,
+    }
+  } finally {
+    fs.closeSync(fd)
   }
 }
 
