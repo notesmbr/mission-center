@@ -64,7 +64,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         description: 'Keep crypto trader + coin scanner running in background',
         location: 'start_persistent.sh',
         deployed: false,
-        deployCommand: 'bash /Users/notesmbr/.openclaw/start_persistent.sh',
+        deployCommand: 'bash ~/.openclaw/start_persistent.sh',
       },
       {
         id: 7,
@@ -83,7 +83,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
         description: 'Automated cron job scans daily notes, curates MEMORY.md every night at 11 PM',
         location: 'memory_maintenance.py',
         deployed: false,
-        deployCommand: "crontab -e && add: '0 23 * * * cd /Users/notesmbr/.openclaw/workspace && python3 memory_maintenance.py'",
+        deployCommand: "crontab -e && add: '0 23 * * * cd ~/.openclaw/workspace && python3 memory_maintenance.py'",
       },
     ],
     deploymentStatus: {

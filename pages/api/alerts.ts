@@ -1,8 +1,12 @@
+import path from 'path'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-const OPENCLAW_CONFIG_PATH = '/Users/notesmbr/.openclaw/openclaw.json'
-const MAINTENANCE_LOG_PATH = '/Users/notesmbr/.openclaw/workspace/scripts/logs/maintenance.log'
-const TRADER_LOG_PATH = '/Users/notesmbr/.openclaw/workspace/trader.log'
+import { tailFileLines } from './_lib/activity'
+import { OPENCLAW_CONFIG_PATH, WORKSPACE_ROOT } from './_lib/paths'
+
+const OPENCLAW_CONFIG_PATH_HINT = '~/.openclaw/openclaw.json'
+const MAINTENANCE_LOG_PATH = path.join(WORKSPACE_ROOT, 'scripts', 'logs', 'maintenance.log')
+const TRADER_LOG_PATH = path.join(WORKSPACE_ROOT, 'trader.log')
 
 export type AlertSeverity = 'error' | 'warn'
 
@@ -41,15 +45,9 @@ function parseProjectTag(name: string | undefined): string | undefined {
   return m?.[1]
 }
 
-function tailLines(text: string, maxLines: number) {
-  const lines = text.split(/\r?\n/).filter((l) => l.trim().length > 0)
-  const tail = lines.slice(-maxLines)
-  return { tail, lineCount: lines.length }
-}
-
-function findLogWarnings(tail: string[]): string[] {
+function findLogWarnings(lines: string[]): string[] {
   const warnings: string[] = []
-  for (const line of tail) {
+  for (const line of lines) {
     if (/\bWARNING\b/i.test(line) || /\bERROR\b/i.test(line) || /Exception/i.test(line)) {
       warnings.push(line)
     }
@@ -83,7 +81,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   res.setHeader('Pragma', 'no-cache')
 
   try {
-    const { execFile } = await import('child_process')
     const fs = await import('fs')
 
     const alerts: Alert[] = []
@@ -150,32 +147,42 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           })
         }
       }
+    } else {
+      alerts.push({
+        id: 'config:missing',
+        severity: 'warn',
+        title: 'OpenClaw config not found',
+        detail: `Expected ${OPENCLAW_CONFIG_PATH_HINT} on this host.`,
+        source: 'openclaw-setup',
+        project: 'ops',
+        ts: nowIso(),
+      })
     }
 
-    // 3) Maintenance log warnings/errors
+    // 3) Maintenance log warnings/errors (tail-only)
     if (fs.existsSync(MAINTENANCE_LOG_PATH)) {
-      const text = fs.readFileSync(MAINTENANCE_LOG_PATH, 'utf-8')
-      const { tail } = tailLines(text, 200)
-      const hits = findLogWarnings(tail)
+      const { tail } = tailFileLines(MAINTENANCE_LOG_PATH, 200)
+      const lines = tail.split(/\r?\n/)
+      const hits = findLogWarnings(lines)
       if (hits.length) {
         alerts.push({
           id: 'log:maintenance',
           severity: 'warn',
           title: 'Nightly maintenance warnings/errors detected',
           detail: hits.slice(-6).join('\n'),
-          source: MAINTENANCE_LOG_PATH,
+          source: 'scripts/logs/maintenance.log',
           project: 'ops',
           ts: nowIso(),
         })
       }
     }
 
-    // 4) Trader log errors
+    // 4) Trader log errors (tail-only)
     if (fs.existsSync(TRADER_LOG_PATH)) {
-      const text = fs.readFileSync(TRADER_LOG_PATH, 'utf-8')
-      const { tail } = tailLines(text, 200)
+      const { tail } = tailFileLines(TRADER_LOG_PATH, 200)
+      const lines = tail.split(/\r?\n/)
       const hits = [] as string[]
-      for (const line of tail) {
+      for (const line of lines) {
         if (/\bERROR\b/i.test(line) || /Exception/i.test(line)) hits.push(line)
       }
       if (hits.length) {
@@ -184,7 +191,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
           severity: 'warn',
           title: 'Trader warnings/errors detected',
           detail: hits.slice(-6).join('\n'),
-          source: TRADER_LOG_PATH,
+          source: 'trader.log',
           project: 'crypto',
           ts: nowIso(),
         })

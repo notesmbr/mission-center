@@ -28,6 +28,8 @@ Or use the helper script (binds to 127.0.0.1 and restarts if needed):
 ## API Endpoints
 
 - `/api/status`
+- `/api/agents/list`
+- `/api/activity/openclaw-log`
 - `/api/openclaw-setup`
 - `/api/cron/list`
 - `/api/cron/runs?id=<id>`

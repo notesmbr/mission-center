@@ -1,6 +1,11 @@
+import path from 'path'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
-const LOG_PATH = '/Users/notesmbr/.openclaw/workspace/scripts/logs/maintenance.log'
+import { tailFileLines } from '../_lib/activity'
+import { WORKSPACE_ROOT } from '../_lib/paths'
+
+const LOG_PATH = path.join(WORKSPACE_ROOT, 'scripts', 'logs', 'maintenance.log')
+const PATH_HINT = 'scripts/logs/maintenance.log'
 const MAX_LINES = 200
 
 type LogResponse =
@@ -20,13 +25,6 @@ type LogResponse =
       lastUpdated: string
     }
 
-function tailLines(text: string, maxLines: number) {
-  const lines = text.split(/\r?\n/)
-  const trimmed = lines.filter((line) => line.length > 0)
-  const tail = trimmed.slice(-maxLines)
-  return { tail: tail.join('\n'), lineCount: trimmed.length }
-}
-
 export default async function handler(req: NextApiRequest, res: NextApiResponse<LogResponse>) {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate')
   res.setHeader('Pragma', 'no-cache')
@@ -38,20 +36,19 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         dataSource: 'local_log',
         available: false,
         reason: 'Maintenance log not found on this host.',
-        path: LOG_PATH,
+        path: PATH_HINT,
         lastUpdated: new Date().toISOString(),
       })
     }
 
-    const text = fs.readFileSync(LOG_PATH, 'utf-8')
-    const { tail, lineCount } = tailLines(text, MAX_LINES)
+    const { tail, lineCountEstimate } = tailFileLines(LOG_PATH, MAX_LINES)
 
     return res.status(200).json({
       dataSource: 'local_log',
       available: true,
-      path: LOG_PATH,
+      path: PATH_HINT,
       tail,
-      lineCount,
+      lineCount: lineCountEstimate,
       lastUpdated: new Date().toISOString(),
     })
   } catch (err: any) {
@@ -59,7 +56,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       dataSource: 'local_log',
       available: false,
       reason: `Failed to read maintenance log: ${err?.message || String(err)}`,
-      path: LOG_PATH,
+      path: PATH_HINT,
       lastUpdated: new Date().toISOString(),
     })
   }
