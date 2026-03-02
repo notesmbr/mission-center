@@ -1,9 +1,11 @@
 import fs from 'fs'
 import path from 'path'
 
+import { GATEWAY_ERR_LOG_PATH, GATEWAY_LOG_PATH } from './paths'
+
 export const OPENCLAW_ACTIVITY_LOGS = {
-  gateway: '/Users/notesmbr/.openclaw/logs/gateway.log',
-  gatewayErr: '/Users/notesmbr/.openclaw/logs/gateway.err.log',
+  gateway: GATEWAY_LOG_PATH,
+  gatewayErr: GATEWAY_ERR_LOG_PATH,
 } as const
 
 export type ActivityLogId = keyof typeof OPENCLAW_ACTIVITY_LOGS

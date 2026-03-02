@@ -2,7 +2,7 @@ import { execFile } from 'child_process'
 import fs from 'fs'
 import path from 'path'
 
-const WORKSPACE_ROOT = '/Users/notesmbr/.openclaw/workspace'
+import { WORKSPACE_ROOT } from './paths'
 const CLAWDBOT_DIR = path.join(WORKSPACE_ROOT, '.clawdbot')
 const ACTIVE_TASKS_PATH = path.join(CLAWDBOT_DIR, 'active-tasks.json')
 const CONFIG_PATH = path.join(CLAWDBOT_DIR, 'config.json')

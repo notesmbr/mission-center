@@ -8,7 +8,6 @@ type ActivityLogResponse =
       stream: 'gateway' | 'gateway_err' | 'both'
       logs: Array<{
         id: 'gateway' | 'gatewayErr'
-        path: string
         exists: boolean
         lineCount: number
         tail: string
@@ -71,7 +70,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       if (!isAllowedActivityLogPath(path)) {
         return {
           id,
-          path,
           exists: false,
           lineCount: 0,
           tail: '',
@@ -81,7 +79,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       if (!fs.existsSync(path)) {
         return {
           id,
-          path,
           exists: false,
           lineCount: 0,
           tail: '',
@@ -91,7 +88,6 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       const { tail, lineCountEstimate } = tailFileLines(path, perLogLines)
       return {
         id,
-        path,
         exists: true,
         lineCount: lineCountEstimate,
         tail: redactTokenLikeStrings(tail),

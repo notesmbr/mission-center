@@ -1,7 +1,7 @@
 import { execFile } from 'child_process'
 import fs from 'fs'
 
-const OPENCLAW_CONFIG_PATH = '/Users/notesmbr/.openclaw/openclaw.json'
+import { OPENCLAW_CONFIG_PATH } from './paths'
 
 function readGatewayConfig() {
   const out: { token?: string; url?: string } = {}

@@ -3,7 +3,9 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 // Read-only endpoint: reports local OpenClaw setup as observed from openclaw.json.
 // NOTE: On Railway this file won't exist; we return a clear "unavailable" response.
 
-const OPENCLAW_CONFIG_PATH = '/Users/notesmbr/.openclaw/openclaw.json'
+import { OPENCLAW_CONFIG_PATH } from './_lib/paths'
+
+const CONFIG_PATH_HINT = '~/.openclaw/openclaw.json'
 
 type SetupResponse =
   | {
@@ -50,7 +52,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
         dataSource: 'local_file',
         available: false,
         reason: 'openclaw.json not found on this host (expected when running on Railway).',
-        configPath: OPENCLAW_CONFIG_PATH,
+        configPath: CONFIG_PATH_HINT,
         lastUpdated: new Date().toISOString(),
       })
     }
@@ -78,7 +80,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     return res.status(200).json({
       dataSource: 'local_file',
       available: true,
-      configPath: OPENCLAW_CONFIG_PATH,
+      configPath: CONFIG_PATH_HINT,
       summary: {
         defaultModel,
         thinkingDefault,
@@ -96,7 +98,7 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
       dataSource: 'local_file',
       available: false,
       reason: `Failed to read/parse openclaw.json: ${err?.message || String(err)}`,
-      configPath: OPENCLAW_CONFIG_PATH,
+      configPath: CONFIG_PATH_HINT,
       lastUpdated: new Date().toISOString(),
     })
   }

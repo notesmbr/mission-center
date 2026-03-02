@@ -3,8 +3,10 @@ import type { NextApiRequest, NextApiResponse } from 'next'
 // Read-only endpoint: estimates OpenClaw/OpenAI-Codex OAuth usage windows from local gateway logs.
 // On Railway these logs won't exist; we return "unavailable".
 
-const LOG_MAIN = '/Users/notesmbr/.openclaw/logs/gateway.log'
-const LOG_ERR = '/Users/notesmbr/.openclaw/logs/gateway.err.log'
+import { GATEWAY_ERR_LOG_PATH, GATEWAY_LOG_PATH } from './_lib/paths'
+
+const LOG_MAIN = GATEWAY_LOG_PATH
+const LOG_ERR = GATEWAY_ERR_LOG_PATH
 
 type UsageResponse =
   | {
@@ -89,36 +91,44 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
     const alerts: UsageResponse extends { available: true } ? any : any[] = []
     let lastLimitEvidence: string | null = null
 
-    function scanFile(path: string) {
-      if (!fs.existsSync(path)) return
-      const text = fs.readFileSync(path, 'utf-8')
-      const lines = text.split(/\r?\n/)
-      for (const line of lines) {
-        if (!line) continue
-        const ts = parseTs(line)
-        if (ts === null) continue
+    async function scanFile(filePath: string) {
+      if (!fs.existsSync(filePath)) return
 
-        const matches = [...line.matchAll(modelPat)].map((m) => m[1])
-        if (!matches.length) continue
+      const stream = fs.createReadStream(filePath, { encoding: 'utf-8' })
+      const readline = await import('readline')
+      const rl = readline.createInterface({ input: stream, crlfDelay: Infinity })
 
-        if (ts >= start7d) {
-          req7d += 1
-          for (const model of matches) inc(models7d, model)
-        }
-        if (ts >= start5h) {
-          req5h += 1
-          for (const model of matches) inc(models5h, model)
-        }
+      try {
+        for await (const line of rl) {
+          if (!line) continue
+          const ts = parseTs(line)
+          if (ts === null) continue
 
-        // capture any explicit limit-ish evidence for alert surfacing
-        if (limitPat.test(line)) {
-          lastLimitEvidence = line.slice(0, 300)
+          const matches = [...line.matchAll(modelPat)].map((m) => m[1])
+          if (!matches.length) continue
+
+          if (ts >= start7d) {
+            req7d += 1
+            for (const model of matches) inc(models7d, model)
+          }
+          if (ts >= start5h) {
+            req5h += 1
+            for (const model of matches) inc(models5h, model)
+          }
+
+          // capture any explicit limit-ish evidence for alert surfacing
+          if (limitPat.test(line)) {
+            lastLimitEvidence = line.slice(0, 300)
+          }
         }
+      } finally {
+        rl.close()
+        stream.close()
       }
     }
 
-    scanFile(LOG_MAIN)
-    scanFile(LOG_ERR)
+    await scanFile(LOG_MAIN)
+    await scanFile(LOG_ERR)
 
     // Conservative alerting: compare to the *low end* of known Pro ranges.
     // These are ranges; we'll warn based on the minimums to avoid surprises.

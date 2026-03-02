@@ -1,15 +1,14 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
 
+// Informational endpoint used by the dashboard UI.
+// Keep it non-sensitive: do not include absolute local paths or secrets.
+
 export default function handler(req: NextApiRequest, res: NextApiResponse) {
   res.status(200).json({
     authorizations: {
       github: {
         status: 'authorized',
-        permissions: [
-          'Create repositories programmatically',
-          'Push code to repositories',
-          'Manage GitHub workflows',
-        ],
+        permissions: ['Create repositories programmatically', 'Push code to repositories', 'Manage GitHub workflows'],
         username: 'notesmbr',
         details: 'Full token access for repo automation',
       },
@@ -31,8 +30,8 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
           strategy: 'Self-evolving momentum',
           status: 'Active',
         },
-        logLocation: '/Users/notesmbr/.openclaw/workspace/trader.log',
-        configLocation: '/Users/notesmbr/.openclaw/workspace/strategy_config.json',
+        logLocation: 'trader.log',
+        configLocation: 'strategy_config.json',
       },
       openRouter: {
         status: 'active',
@@ -53,7 +52,7 @@ export default function handler(req: NextApiRequest, res: NextApiResponse) {
       {
         name: 'Crypto Trading Bot',
         status: 'active',
-        repo: '/Users/notesmbr/.openclaw/workspace',
+        repo: '(local workspace)',
         description: 'Self-evolving momentum trading strategy',
         features: ['Live trading', 'Auto-optimization', 'Performance tracking', 'Risk management'],
       },
