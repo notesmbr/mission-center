@@ -1,12 +1,13 @@
 import React from 'react'
 
-export type NavKey = 'overview' | 'tasks' | 'alerts' | 'jobs' | 'logs' | 'usage' | 'debug'
+export type NavKey = 'overview' | 'tasks' | 'alerts' | 'jobs' | 'agents' | 'logs' | 'usage' | 'debug'
 
 const NAV: Array<{ key: NavKey; label: string; icon: string }> = [
   { key: 'overview', label: 'Overview', icon: '⌂' },
   { key: 'tasks', label: 'Tasks', icon: '☰' },
   { key: 'alerts', label: 'Alert Inbox', icon: '⨯' },
   { key: 'jobs', label: 'Jobs Board', icon: '⏱' },
+  { key: 'agents', label: 'Agents / Activity', icon: '⚙' },
   { key: 'logs', label: 'Logs', icon: '🪵' },
   { key: 'usage', label: 'Usage', icon: '📈' },
   { key: 'debug', label: 'Truth / Debug', icon: '◧' },

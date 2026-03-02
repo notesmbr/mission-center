@@ -23,21 +23,6 @@ type TasksListData =
       lastUpdated: string
     }
 
-type TaskDetailsData =
-  | {
-      dataSource: 'clawdbot_task_details'
-      available: true
-      task: any
-      log: { available: true; path: string; tail: string; lineCount: number } | { available: false; reason: string }
-      lastUpdated: string
-    }
-  | {
-      dataSource: 'clawdbot_task_details'
-      available: false
-      reason: string
-      lastUpdated: string
-    }
-
 type CronListData =
   | { dataSource: 'openclaw_cron_list'; available: true; jobs: any[]; lastUpdated: string }
   | { dataSource: 'openclaw_cron_list'; available: false; reason: string; lastUpdated: string }
@@ -115,6 +100,58 @@ type StatusData =
       lastUpdated: string
     }
 
+type AgentSession = {
+  agentId: string
+  key: string
+  kind: string
+  sessionId: string | null
+  updatedAt: string
+  age: number | null
+  model: string | null
+  percentUsed: number | null
+  totalTokens: number | null
+  remainingTokens: number | null
+  abortedLastRun: boolean
+  flags: string[]
+}
+
+type AgentsListData =
+  | {
+      dataSource: 'openclaw_status_recent'
+      available: true
+      sessions: AgentSession[]
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'openclaw_status_recent'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+type ActivityFeedData =
+  | {
+      dataSource: 'openclaw_gateway_logs'
+      available: true
+      stream: 'gateway' | 'gateway_err' | 'both'
+      logs: Array<{
+        id: 'gateway' | 'gatewayErr'
+        path: string
+        exists: boolean
+        lineCount: number
+        tail: string
+      }>
+      combinedTail: string
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'openclaw_gateway_logs'
+      available: false
+      stream: 'gateway' | 'gateway_err' | 'both'
+      reason: string
+      lastUpdated: string
+    }
+
 function parseProjectTag(name?: string): string | null {
   if (!name) return null
   const m = name.match(/^\[project:([^\]]+)\]\s+/)
@@ -133,9 +170,23 @@ function msToRelative(ms?: number): string {
   return `${d}d ago`
 }
 
-function msToIso(ms?: number): string {
-  if (!ms) return 'n/a'
-  return new Date(ms).toISOString()
+function ageLabel(ageMs?: number | null): string {
+  if (typeof ageMs !== 'number' || ageMs < 0) return 'n/a'
+  const s = Math.floor(ageMs / 1000)
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  if (h < 48) return `${h}h`
+  const d = Math.floor(h / 24)
+  return `${d}d`
+}
+
+function isoToReadable(iso?: string): string {
+  if (!iso) return 'n/a'
+  const ts = Date.parse(iso)
+  if (Number.isNaN(ts)) return 'n/a'
+  return new Date(ts).toLocaleString()
 }
 
 function scheduleLabel(job: any): string {
@@ -175,6 +226,8 @@ export default function Home() {
   const [tasksList, setTasksList] = useState<TasksListData | null>(null)
   const [cronList, setCronList] = useState<CronListData | null>(null)
   const [openclawStatus, setOpenclawStatus] = useState<StatusData | null>(null)
+  const [agentsList, setAgentsList] = useState<AgentsListData | null>(null)
+  const [activityFeed, setActivityFeed] = useState<ActivityFeedData | null>(null)
   const [debugSetup, setDebugSetup] = useState<AnyJson | null>(null)
   const [debugModels, setDebugModels] = useState<AnyJson | null>(null)
   const [usageData, setUsageData] = useState<UsageData | null>(null)
@@ -182,11 +235,9 @@ export default function Home() {
   const [traderLog, setTraderLog] = useState<LogData | null>(null)
 
   const [selectedProject, setSelectedProject] = useState<string>('all')
-  const [selectedTaskId, setSelectedTaskId] = useState<string>('')
-  const [taskDetails, setTaskDetails] = useState<TaskDetailsData | null>(null)
-  const [taskDetailsLoading, setTaskDetailsLoading] = useState(false)
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
+  const [copiedSessionKey, setCopiedSessionKey] = useState<string>('')
 
   const [loading, setLoading] = useState(true)
 
@@ -198,12 +249,14 @@ export default function Home() {
   useEffect(() => {
     const fetchAll = async () => {
       try {
-        const [alertsRes, tasksRes, cronRes, statusRes, setupRes, modelsRes, usageRes, maintRes, traderRes] = await Promise.all([
+        const [alertsRes, tasksRes, cronRes, statusRes, agentsRes, activityRes, setupRes, modelsRes, usageRes, maintRes, traderRes] = await Promise.all([
           safeFetchJson('/api/alerts'),
           // sync=1: best-effort orchestrator check, throttled server-side
-          safeFetchJson(`/api/tasks/list?sync=1&project=${encodeURIComponent(selectedProject)}`),
+          safeFetchJson('/api/tasks/list?sync=1'),
           safeFetchJson('/api/cron/list'),
           safeFetchJson('/api/status'),
+          safeFetchJson('/api/agents/list'),
+          safeFetchJson('/api/activity/openclaw-log'),
           safeFetchJson('/api/openclaw-setup'),
           safeFetchJson('/api/models/list'),
           safeFetchJson('/api/openclaw-usage'),
@@ -215,6 +268,8 @@ export default function Home() {
         setTasksList(tasksRes)
         setCronList(cronRes)
         setOpenclawStatus(statusRes)
+        setAgentsList(agentsRes)
+        setActivityFeed(activityRes)
         setDebugSetup(setupRes)
         setDebugModels(modelsRes)
         setUsageData(usageRes)
@@ -230,7 +285,7 @@ export default function Home() {
     fetchAll()
     const interval = setInterval(fetchAll, 10000)
     return () => clearInterval(interval)
-  }, [selectedProject])
+  }, [])
 
   useEffect(() => {
     if (!selectedJobId) return
@@ -269,58 +324,8 @@ export default function Home() {
       }
     }
 
-    if (alertsData && alertsData.available) {
-      for (const a of alertsData.alerts || []) {
-        if (a?.project) set.add(a.project)
-      }
-    }
-
     return ['all', ...Array.from(set).sort()]
-  }, [cronList, tasksList, alertsData])
-
-  useEffect(() => {
-    if (selectedProject === 'all') return
-    if (!projectOptions.includes(selectedProject)) {
-      setSelectedProject('all')
-    }
-  }, [projectOptions, selectedProject])
-
-  useEffect(() => {
-    if (!selectedTaskId) {
-      setTaskDetails(null)
-      setTaskDetailsLoading(false)
-      return
-    }
-
-    let cancelled = false
-
-    const fetchTaskDetails = async () => {
-      setTaskDetailsLoading(true)
-      try {
-        const res = await fetch(`/api/tasks/details?id=${encodeURIComponent(selectedTaskId)}`)
-        const data = await res.json()
-        if (!cancelled) setTaskDetails(data)
-      } catch (_err) {
-        if (!cancelled) {
-          setTaskDetails({
-            dataSource: 'clawdbot_task_details',
-            available: false,
-            reason: 'Failed to load task details.',
-            lastUpdated: new Date().toISOString(),
-          })
-        }
-      } finally {
-        if (!cancelled) setTaskDetailsLoading(false)
-      }
-    }
-
-    fetchTaskDetails()
-    const interval = setInterval(fetchTaskDetails, 15000)
-    return () => {
-      cancelled = true
-      clearInterval(interval)
-    }
-  }, [selectedTaskId])
+  }, [cronList, tasksList])
 
   const filteredJobs = useMemo(() => {
     const jobs = cronList && cronList.available ? cronList.jobs : []
@@ -361,13 +366,6 @@ export default function Home() {
     if (selectedProject === 'all') return tasks
     return tasks.filter((t: any) => t?.projectId === selectedProject)
   }, [tasksList, selectedProject])
-
-  useEffect(() => {
-    if (!selectedTaskId) return
-    if (!filteredTasks.some((task: any) => task?.id === selectedTaskId)) {
-      setSelectedTaskId('')
-    }
-  }, [filteredTasks, selectedTaskId])
 
   const taskBuckets = useMemo(() => {
     const queued: any[] = []
@@ -427,6 +425,41 @@ export default function Home() {
       pct,
     }
   }, [usageData])
+
+  const groupedAgentSessions = useMemo(() => {
+    if (!agentsList || !agentsList.available) return []
+
+    const groups = new Map<string, AgentSession[]>()
+    for (const session of agentsList.sessions || []) {
+      const agentId = session.agentId || 'unknown'
+      const list = groups.get(agentId)
+      if (list) list.push(session)
+      else groups.set(agentId, [session])
+    }
+
+    const grouped = Array.from(groups.entries()).map(([agentId, sessions]) => {
+      sessions.sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt))
+      return {
+        agentId,
+        sessions,
+        newestTs: Date.parse(sessions[0]?.updatedAt || ''),
+      }
+    })
+
+    grouped.sort((a, b) => (Number.isNaN(b.newestTs) ? 0 : b.newestTs) - (Number.isNaN(a.newestTs) ? 0 : a.newestTs))
+    return grouped
+  }, [agentsList])
+
+  const copySessionKey = async (key: string) => {
+    if (!key || typeof navigator === 'undefined' || !navigator.clipboard) return
+    try {
+      await navigator.clipboard.writeText(key)
+      setCopiedSessionKey(key)
+      setTimeout(() => setCopiedSessionKey(''), 1200)
+    } catch (err) {
+      console.error('Failed to copy session key', err)
+    }
+  }
 
   if (loading) {
     return (
@@ -566,7 +599,7 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="flex items-center justify-between">
                     <div className="text-white text-lg font-semibold">Tasks</div>
-                    <div className="text-slate-500 text-xs">board auto-refreshes • status derives from .clawdbot • click a task for details</div>
+                    <div className="text-slate-500 text-xs">board auto-refreshes • status derives from .clawdbot</div>
                   </div>
 
                   {!tasksList ? (
@@ -598,14 +631,10 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.queued.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.queued.map((t: any) => (
-                              <button
-                                key={t.id}
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className="w-full text-left bg-slate-950/40 border border-slate-700 rounded-lg p-3 hover:bg-slate-950/70"
-                              >
+                              <div key={t.id} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-slate-400 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -616,15 +645,11 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.running.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.running.map((t: any) => (
-                              <button
-                                key={t.id}
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className="w-full text-left bg-slate-950/40 border border-blue-800 rounded-lg p-3 hover:bg-slate-950/70"
-                              >
+                              <div key={t.id} className="bg-slate-950/40 border border-blue-800 rounded-lg p-3">
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-slate-400 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
                                 {t.branch && <div className="text-slate-500 text-xs mt-1">branch: {t.branch}</div>}
-                              </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -635,14 +660,10 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.needsAttention.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.needsAttention.map((t: any) => (
-                              <button
-                                key={t.id}
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className="w-full text-left bg-slate-950/40 border border-rose-800 rounded-lg p-3 hover:bg-slate-950/70"
-                              >
+                              <div key={t.id} className="bg-slate-950/40 border border-rose-800 rounded-lg p-3">
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-rose-200 text-xs mt-1">{t.projectId || 'no-project'} • {t.agent || 'agent?'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -653,14 +674,10 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.done.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.done.map((t: any) => (
-                              <button
-                                key={t.id}
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className="w-full text-left bg-slate-950/40 border border-emerald-800 rounded-lg p-3 hover:bg-slate-950/70"
-                              >
+                              <div key={t.id} className="bg-slate-950/40 border border-emerald-800 rounded-lg p-3">
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-emerald-200 text-xs mt-1">{t.projectId || 'no-project'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -671,14 +688,10 @@ export default function Home() {
                           <div className="mt-4 space-y-3">
                             {taskBuckets.failed.length === 0 && <div className="text-slate-400 text-sm">None</div>}
                             {taskBuckets.failed.map((t: any) => (
-                              <button
-                                key={t.id}
-                                onClick={() => setSelectedTaskId(t.id)}
-                                className="w-full text-left bg-slate-950/40 border border-rose-900 rounded-lg p-3 hover:bg-slate-950/70"
-                              >
+                              <div key={t.id} className="bg-slate-950/40 border border-rose-900 rounded-lg p-3">
                                 <div className="text-slate-100 font-medium">{t.description || t.id}</div>
                                 <div className="text-rose-200 text-xs mt-1">{t.projectId || 'no-project'} • {msToRelative(t.updatedAt || t.createdAt)}</div>
-                              </button>
+                              </div>
                             ))}
                           </div>
                         </div>
@@ -689,98 +702,6 @@ export default function Home() {
                           <div className="text-white font-semibold">Unknown status</div>
                           <div className="text-slate-500 text-xs mt-1">tasks with unrecognized state</div>
                           <pre className="text-xs text-slate-300 mt-3 overflow-x-auto whitespace-pre-wrap">{JSON.stringify(taskBuckets.unknown, null, 2)}</pre>
-                        </div>
-                      )}
-
-                      {selectedTaskId && (
-                        <div
-                          className="fixed inset-0 z-[60] bg-slate-950/70 backdrop-blur-sm p-4 md:p-6"
-                          onClick={() => setSelectedTaskId('')}
-                        >
-                          <div
-                            className="mx-auto w-full max-w-4xl max-h-full overflow-hidden bg-slate-900 border border-slate-700 rounded-xl"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
-                              <div className="min-w-0">
-                                <div className="text-white font-semibold truncate">Task details</div>
-                                <div className="text-slate-400 text-xs truncate">{selectedTaskId}</div>
-                              </div>
-                              <button
-                                onClick={() => setSelectedTaskId('')}
-                                className="text-slate-300 hover:text-white text-sm border border-slate-600 rounded px-2 py-1"
-                              >
-                                Close
-                              </button>
-                            </div>
-
-                            <div className="p-4 overflow-y-auto max-h-[75vh]">
-                              {taskDetailsLoading && <div className="text-slate-400 text-sm">Loading details...</div>}
-
-                              {!taskDetailsLoading && !taskDetails && (
-                                <div className="text-slate-400 text-sm">No task details payload.</div>
-                              )}
-
-                              {!taskDetailsLoading && taskDetails && !taskDetails.available && (
-                                <div className="text-rose-200 text-sm">{taskDetails.reason}</div>
-                              )}
-
-                              {!taskDetailsLoading && taskDetails && taskDetails.available && (
-                                <div className="space-y-4">
-                                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">projectId</div>
-                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.projectId || 'n/a'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">agent</div>
-                                      <div className="text-slate-100 mt-1">{taskDetails.task.agent || 'n/a'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">status</div>
-                                      <div className="text-slate-100 mt-1">{taskDetails.task.status || 'unknown'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">updatedAt</div>
-                                      <div className="text-slate-100 mt-1">
-                                        {msToIso(taskDetails.task.updatedAt)} ({msToRelative(taskDetails.task.updatedAt || taskDetails.task.createdAt)})
-                                      </div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">branch</div>
-                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.branch || 'n/a'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">worktree</div>
-                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.worktree || 'n/a'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">tmuxSession</div>
-                                      <div className="text-slate-100 mt-1 break-all">{taskDetails.task.tmuxSession || 'n/a'}</div>
-                                    </div>
-                                    <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
-                                      <div className="text-slate-500 text-xs">attempts / maxAttempts</div>
-                                      <div className="text-slate-100 mt-1">
-                                        {taskDetails.task.attempts ?? 0} / {taskDetails.task.maxAttempts ?? '?'}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  <div className="card">
-                                    <div className="text-white font-semibold">Session log tail</div>
-                                    {taskDetails.log.available ? (
-                                      <>
-                                        <div className="text-slate-500 text-xs mt-1">{taskDetails.log.path}</div>
-                                        <pre className="text-xs text-slate-200 mt-3 whitespace-pre-wrap overflow-x-auto">{taskDetails.log.tail || '(log is empty)'}</pre>
-                                      </>
-                                    ) : (
-                                      <div className="text-slate-400 text-sm mt-2">no log available</div>
-                                    )}
-                                  </div>
-                                </div>
-                              )}
-                            </div>
-                          </div>
                         </div>
                       )}
                     </>
@@ -932,6 +853,134 @@ export default function Home() {
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {/* AGENTS / ACTIVITY */}
+              {activeTab === 'agents' && (
+                <div className="space-y-4">
+                  <div className="flex items-center justify-between">
+                    <div className="text-white text-lg font-semibold">Agents / Activity</div>
+                    <div className="text-slate-500 text-xs">sessions active when age &lt; 5m • refreshes every 10s</div>
+                  </div>
+
+                  {tasksList && tasksList.available && (
+                    <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                      <div className="card py-4">
+                        <div className="text-slate-400 text-xs">Queued</div>
+                        <div className="text-xl text-white font-semibold mt-1">{taskBuckets.queued.length}</div>
+                      </div>
+                      <div className="card py-4">
+                        <div className="text-slate-400 text-xs">Running</div>
+                        <div className="text-xl text-blue-300 font-semibold mt-1">{taskBuckets.running.length}</div>
+                      </div>
+                      <div className="card py-4">
+                        <div className="text-slate-400 text-xs">Needs attention</div>
+                        <div className="text-xl text-rose-300 font-semibold mt-1">{taskBuckets.needsAttention.length}</div>
+                      </div>
+                      <div className="card py-4">
+                        <div className="text-slate-400 text-xs">Done</div>
+                        <div className="text-xl text-emerald-300 font-semibold mt-1">{taskBuckets.done.length}</div>
+                      </div>
+                      <div className="card py-4">
+                        <div className="text-slate-400 text-xs">Failed</div>
+                        <div className="text-xl text-rose-300 font-semibold mt-1">{taskBuckets.failed.length}</div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                    <div className="card">
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-semibold">OpenClaw Sessions</div>
+                        <div className="text-slate-500 text-xs">
+                          {agentsList && agentsList.available ? `${agentsList.sessions.length} session(s)` : 'no session payload'}
+                        </div>
+                      </div>
+
+                      {!agentsList ? (
+                        <div className="text-slate-400 text-sm mt-3">No session data yet.</div>
+                      ) : !agentsList.available ? (
+                        <div className="text-slate-400 text-sm mt-3">{agentsList.reason}</div>
+                      ) : groupedAgentSessions.length === 0 ? (
+                        <div className="text-slate-400 text-sm mt-3">No recent sessions.</div>
+                      ) : (
+                        <div className="mt-3 space-y-4">
+                          {groupedAgentSessions.map((group) => (
+                            <div key={group.agentId} className="rounded-lg border border-slate-700 bg-slate-900/50 p-3">
+                              <div className="flex items-center justify-between mb-3">
+                                <div className="text-slate-200 font-medium">{group.agentId}</div>
+                                <div className="text-slate-500 text-xs">{group.sessions.length} session(s)</div>
+                              </div>
+                              <div className="space-y-2">
+                                {group.sessions.map((session) => {
+                                  const isActive = typeof session.age === 'number' && session.age < 5 * 60 * 1000
+                                  return (
+                                    <div key={`${session.key}:${session.updatedAt}`} className="rounded border border-slate-800 bg-slate-950/60 px-3 py-2">
+                                      <div className="flex items-center justify-between gap-3">
+                                        <div className="min-w-0">
+                                          <div className="flex items-center gap-2">
+                                            <span className={`h-2 w-2 rounded-full ${isActive ? 'bg-emerald-400' : 'bg-slate-500'}`} />
+                                            <span className={`text-xs font-semibold ${isActive ? 'text-emerald-300' : 'text-slate-400'}`}>
+                                              {isActive ? 'ACTIVE' : 'IDLE'}
+                                            </span>
+                                            <span className="text-slate-300 text-sm">{session.kind}</span>
+                                            <span className="text-slate-500 text-xs">{session.model || 'model:n/a'}</span>
+                                          </div>
+                                          <div className="text-slate-500 text-xs mt-1">
+                                            key {session.key ? `${session.key.slice(0, 16)}${session.key.length > 16 ? '…' : ''}` : 'n/a'} •{' '}
+                                            updated {isoToReadable(session.updatedAt)} • age {ageLabel(session.age)} • tokens{' '}
+                                            {typeof session.totalTokens === 'number' ? session.totalTokens.toLocaleString() : 'n/a'} • used{' '}
+                                            {typeof session.percentUsed === 'number' ? `${session.percentUsed}%` : 'n/a'}
+                                          </div>
+                                          {(session.flags.length > 0 || session.abortedLastRun) && (
+                                            <div className="text-amber-300 text-xs mt-1">
+                                              {session.abortedLastRun ? 'aborted last run' : 'flags'}{session.flags.length ? ` • ${session.flags.join(', ')}` : ''}
+                                            </div>
+                                          )}
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => copySessionKey(session.key)}
+                                          className="shrink-0 rounded border border-slate-700 px-2 py-1 text-xs text-slate-300 hover:bg-slate-800"
+                                          title={session.key}
+                                        >
+                                          {copiedSessionKey === session.key ? 'Copied' : 'Copy key'}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  )
+                                })}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="card">
+                      <div className="flex items-center justify-between">
+                        <div className="text-white font-semibold">Recent Activity</div>
+                        <div className="text-slate-500 text-xs">{activityFeed?.lastUpdated ? `updated ${isoToReadable(activityFeed.lastUpdated)}` : ''}</div>
+                      </div>
+                      {!activityFeed ? (
+                        <div className="text-slate-400 text-sm mt-3">No activity payload yet.</div>
+                      ) : !activityFeed.available ? (
+                        <div className="text-slate-400 text-sm mt-3">{activityFeed.reason}</div>
+                      ) : (
+                        <>
+                          <div className="text-slate-500 text-xs mt-2">
+                            {activityFeed.logs
+                              .map((log) => `${log.id}:${log.exists ? `${log.lineCount} lines` : 'missing'}`)
+                              .join(' • ')}
+                          </div>
+                          <pre className="text-xs text-slate-200 mt-3 whitespace-pre-wrap overflow-x-auto">
+                            {activityFeed.combinedTail ? pickRecentAlertLines(activityFeed.combinedTail, 80) : 'No recent lines'}
+                          </pre>
+                        </>
+                      )}
+                    </div>
+                  </div>
                 </div>
               )}
 

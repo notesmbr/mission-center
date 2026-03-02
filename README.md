@@ -5,6 +5,7 @@ Real-time **local-only** monitoring for OpenClaw agents, cron jobs, and trader a
 ## Features
 
 ✅ **Real-Time Status** - OpenClaw and agent health monitoring  
+✅ **Agents + Activity Feed** - Recent sessions + gateway log tail (redacted)  
 ✅ **Cron Jobs** - View cron list + recent runs  
 ✅ **Activity Logs** - Maintenance + trader logs  
 ✅ **Crypto Trader Panel** - Read-only view of `trader.log`  
@@ -46,6 +47,8 @@ Or use the helper script (binds to 127.0.0.1):
 ## API Endpoints
 
 - `GET /api/status` - OpenClaw and agent status
+- `GET /api/agents/list` - Sanitized `sessions.recent` view
+- `GET /api/activity/openclaw-log` - Redacted gateway activity feed
 - `GET /api/openclaw-setup` - Local OpenClaw config snapshot
 - `GET /api/cron/list` - Cron job list
 - `GET /api/cron/runs?id=<id>` - Cron run history for a job
