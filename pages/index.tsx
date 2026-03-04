@@ -159,6 +159,8 @@ type TraderKillSwitchData =
       lastUpdated: string
     }
 
+const TRADER_TRADE_LIMIT_OPTIONS = [50, 100, 200, 500] as const
+
 
 
 type ProjectDoc = { kind: 'repo' | 'vault'; path: string; title: string | null; excerpt: string; updatedAtMs: number | null }
@@ -269,6 +271,7 @@ export default function Home() {
   const [projectsData, setProjectsData] = useState<ProjectsSummaryData | null>(null)
   const [traderStatus, setTraderStatus] = useState<TraderStatusData | null>(null)
   const [traderTrades, setTraderTrades] = useState<TraderTradesData | null>(null)
+  const [traderTradesLimit, setTraderTradesLimit] = useState<number>(50)
 
   const [loading, setLoading] = useState(true)
 
@@ -302,7 +305,7 @@ export default function Home() {
         safeFetchJson('/api/cron/list'),
         safeFetchJson('/api/projects/summary'),
         safeFetchJson('/api/trader/status'),
-        safeFetchJson('/api/trader/trades?limit=50'),
+        safeFetchJson(`/api/trader/trades?limit=${encodeURIComponent(String(traderTradesLimit))}`),
       ])
 
       const [statusRes, agentsRes, swarmRes, cronRes, projectsRes, traderStatusRes, traderTradesRes] = results
@@ -325,8 +328,7 @@ export default function Home() {
     refreshAll()
     const interval = setInterval(refreshAll, 10000)
     return () => clearInterval(interval)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [traderTradesLimit])
 
   useEffect(() => {
     if (!selectedJobId) return
@@ -867,8 +869,22 @@ export default function Home() {
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-800">
+          <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
             <div className="text-white font-semibold">Recent Trades (last {traderRows.length})</div>
+            <label className="text-xs text-slate-400 flex items-center gap-2">
+              Rows
+              <select
+                value={traderTradesLimit}
+                onChange={(e) => setTraderTradesLimit(Number(e.target.value) || 50)}
+                className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1"
+              >
+                {TRADER_TRADE_LIMIT_OPTIONS.map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
           {traderRows.length === 0 ? (
             <div className="px-4 py-4 text-slate-400 text-sm">No trades in trades.jsonl yet.</div>
