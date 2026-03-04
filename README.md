@@ -8,7 +8,7 @@ Real-time **local-only** monitoring for OpenClaw agents, cron jobs, and trader a
 ✅ **Agents + Activity Feed** - Recent sessions + gateway log tail (redacted)  
 ✅ **Cron Jobs** - View cron list + recent runs  
 ✅ **Activity Logs** - Maintenance + trader logs  
-✅ **Crypto Trader Panel** - Read-only view of `trader.log`  
+✅ **Crypto Trader View** - Local-only status, positions, trades, and kill switch  
 ✅ **Setup Snapshot** - Local OpenClaw config summary
 
 ## Tech Stack
@@ -54,6 +54,13 @@ Or use the helper script (binds to 127.0.0.1):
 - `GET /api/cron/runs?id=<id>` - Cron run history for a job
 - `GET /api/logs/maintenance` - Maintenance log tail
 - `GET /api/logs/trader` - Trader log tail
+- `GET /api/trader/status` - Trader status from allowlisted files
+- `GET /api/trader/trades?limit=<N>` - Recent trades from `trades.jsonl` (default 50, max 500)
+- `POST /api/trader/kill-switch` - Enable/disable kill switch (`{ "enabled": true|false }`)
+
+## Trader File Contracts
+
+- See [`docs/trader-files.md`](docs/trader-files.md) for the local file schema and path contract used by the Trader view.
 
 ## Deployment
 

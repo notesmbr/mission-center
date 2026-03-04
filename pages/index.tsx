@@ -96,6 +96,69 @@ type CronRunsData =
   | { dataSource: 'openclaw_cron_runs'; available: true; entries: any[]; lastUpdated: string }
   | { dataSource: 'openclaw_cron_runs'; available: false; reason: string; lastUpdated: string }
 
+type TraderOpenPosition = {
+  product: string
+  qty: number
+  entryPrice?: number
+  markPrice?: number
+  unrealizedPnlUsd?: number
+}
+
+type TraderStatusData =
+  | {
+      available: true
+      mode: 'paper' | 'live' | 'unknown'
+      equityUsd: number | null
+      cashUsd: number | null
+      openPositions: TraderOpenPosition[]
+      openOrdersCount: number
+      products: string[]
+      lastRunTs: string | null
+      lastError: string | null
+      killSwitchEnabled: boolean
+      lastUpdated: string
+    }
+  | {
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+type TraderTradeRow = {
+  ts: string | null
+  product: string
+  side: string | null
+  qty: number | null
+  price: number | null
+  fees: number | null
+  pnlUsd: number | null
+  reason: string | null
+}
+
+type TraderTradesData =
+  | {
+      available: true
+      rows: TraderTradeRow[]
+      lastUpdated: string
+    }
+  | {
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
+type TraderKillSwitchData =
+  | {
+      available: true
+      killSwitchEnabled: boolean
+      lastUpdated: string
+    }
+  | {
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
 
 
 type ProjectDoc = { kind: 'repo' | 'vault'; path: string; title: string | null; excerpt: string; updatedAtMs: number | null }
@@ -131,6 +194,28 @@ function msToRelative(ms?: number): string {
 function msToHuman(ms?: number): string {
   if (!ms) return 'n/a'
   return `${new Date(ms).toLocaleString()} (${msToRelative(ms)})`
+}
+
+function isoToHuman(ts?: string | null): string {
+  if (!ts) return 'n/a'
+  const ms = Date.parse(ts)
+  if (!Number.isFinite(ms)) return ts
+  return `${new Date(ms).toLocaleString()} (${msToRelative(ms)})`
+}
+
+function fmtUsd(value?: number | null): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a'
+  return `$${value.toFixed(2)}`
+}
+
+function fmtNumber(value?: number | null, digits = 4): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a'
+  return value.toFixed(digits)
+}
+
+function pct(value?: number | null): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a'
+  return `${(value * 100).toFixed(1)}%`
 }
 
 function taskStatusClass(status?: string): string {
@@ -182,6 +267,8 @@ export default function Home() {
   const [swarmData, setSwarmData] = useState<SwarmStatusData | null>(null)
   const [cronData, setCronData] = useState<CronListData | null>(null)
   const [projectsData, setProjectsData] = useState<ProjectsSummaryData | null>(null)
+  const [traderStatus, setTraderStatus] = useState<TraderStatusData | null>(null)
+  const [traderTrades, setTraderTrades] = useState<TraderTradesData | null>(null)
 
   const [loading, setLoading] = useState(true)
 
@@ -198,6 +285,8 @@ export default function Home() {
   const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
 
   const [copiedText, setCopiedText] = useState<string>('')
+  const [killSwitchBusy, setKillSwitchBusy] = useState(false)
+  const [killSwitchNotice, setKillSwitchNotice] = useState('')
 
   const safeFetchJson = async (url: string): Promise<AnyJson> => {
     const response = await fetch(url)
@@ -212,15 +301,19 @@ export default function Home() {
         safeFetchJson('/api/swarm/status'),
         safeFetchJson('/api/cron/list'),
         safeFetchJson('/api/projects/summary'),
+        safeFetchJson('/api/trader/status'),
+        safeFetchJson('/api/trader/trades?limit=50'),
       ])
 
-      const [statusRes, agentsRes, swarmRes, cronRes, projectsRes] = results
+      const [statusRes, agentsRes, swarmRes, cronRes, projectsRes, traderStatusRes, traderTradesRes] = results
 
       if (statusRes.status === 'fulfilled') setStatusData(statusRes.value)
       if (agentsRes.status === 'fulfilled') setAgentsData(agentsRes.value)
       if (swarmRes.status === 'fulfilled') setSwarmData(swarmRes.value)
       if (cronRes.status === 'fulfilled') setCronData(cronRes.value)
       if (projectsRes.status === 'fulfilled') setProjectsData(projectsRes.value)
+      if (traderStatusRes.status === 'fulfilled') setTraderStatus(traderStatusRes.value)
+      if (traderTradesRes.status === 'fulfilled') setTraderTrades(traderTradesRes.value)
 
       setLastRefreshedAt(Date.now())
     } finally {
@@ -288,6 +381,12 @@ export default function Home() {
       clearInterval(interval)
     }
   }, [selectedTaskId])
+
+  useEffect(() => {
+    if (!killSwitchNotice) return
+    const timer = setTimeout(() => setKillSwitchNotice(''), 3500)
+    return () => clearTimeout(timer)
+  }, [killSwitchNotice])
 
   const projectOptions = useMemo(() => {
     const set = new Set<string>()
@@ -400,6 +499,65 @@ export default function Home() {
     })
   }, [agentsData])
 
+  const traderRows = useMemo(() => {
+    if (!traderTrades || !traderTrades.available) return [] as TraderTradeRow[]
+    return traderTrades.rows || []
+  }, [traderTrades])
+
+  const traderStats = useMemo(() => {
+    if (!traderTrades || !traderTrades.available) {
+      return {
+        winRate: null as number | null,
+        totalPnl: null as number | null,
+        maxDrawdown: null as number | null,
+        tradesPerDay: null as number | null,
+      }
+    }
+
+    let wins = 0
+    let pnlSamples = 0
+    let totalPnl = 0
+
+    for (const row of traderTrades.rows) {
+      if (typeof row.pnlUsd === 'number') {
+        pnlSamples += 1
+        totalPnl += row.pnlUsd
+        if (row.pnlUsd > 0) wins += 1
+      }
+    }
+
+    const rowsSorted = [...traderTrades.rows].sort((a, b) => Date.parse(a.ts || '') - Date.parse(b.ts || ''))
+    let runningPnl = 0
+    let peak = 0
+    let maxDrawdown = 0
+    for (const row of rowsSorted) {
+      if (typeof row.pnlUsd !== 'number') continue
+      runningPnl += row.pnlUsd
+      if (runningPnl > peak) peak = runningPnl
+      const drawdown = peak - runningPnl
+      if (drawdown > maxDrawdown) maxDrawdown = drawdown
+    }
+
+    const timestamps = traderTrades.rows
+      .map((row) => Date.parse(row.ts || ''))
+      .filter((ms) => Number.isFinite(ms))
+      .sort((a, b) => a - b)
+    let tradesPerDay: number | null = null
+    if (timestamps.length >= 2) {
+      const spanDays = Math.max(1, (timestamps[timestamps.length - 1] - timestamps[0]) / (24 * 60 * 60 * 1000))
+      tradesPerDay = traderTrades.rows.length / spanDays
+    } else if (timestamps.length === 1) {
+      tradesPerDay = traderTrades.rows.length
+    }
+
+    return {
+      winRate: pnlSamples > 0 ? wins / pnlSamples : null,
+      totalPnl,
+      maxDrawdown,
+      tradesPerDay,
+    }
+  }, [traderTrades])
+
   const filteredJobs = useMemo(() => {
     const jobs = cronData && cronData.available ? cronData.jobs : []
     if (selectedProject === 'all') return jobs
@@ -444,6 +602,38 @@ export default function Home() {
       setTimeout(() => setCopiedText(''), 1200)
     } catch {
       // ignore
+    }
+  }
+
+  const toggleKillSwitch = async (enabled: boolean) => {
+    if (killSwitchBusy) return
+    if (typeof window !== 'undefined') {
+      const ok = window.confirm(
+        enabled
+          ? 'Enable kill switch? This should stop the trader immediately.'
+          : 'Disable kill switch? Trader may resume on next run.',
+      )
+      if (!ok) return
+    }
+
+    setKillSwitchBusy(true)
+    try {
+      const response = await fetch('/api/trader/kill-switch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ enabled }),
+      })
+      const data = (await response.json()) as TraderKillSwitchData
+      if (!data?.available) {
+        setKillSwitchNotice(data?.reason || 'Failed to update kill switch.')
+        return
+      }
+      setKillSwitchNotice(data.killSwitchEnabled ? 'Kill switch enabled.' : 'Kill switch disabled.')
+      await refreshAll()
+    } catch {
+      setKillSwitchNotice('Failed to update kill switch.')
+    } finally {
+      setKillSwitchBusy(false)
     }
   }
 
@@ -533,6 +723,193 @@ export default function Home() {
           )}
         </div>
       </div>
+    </div>
+  )
+
+  const TraderView = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-white text-lg font-semibold">Trader</div>
+          <div className="text-slate-500 text-xs">Crypto trader (local-only allowlisted files)</div>
+        </div>
+        <div className="text-slate-500 text-xs">auto-refreshes every 10s • last {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : 'n/a'}</div>
+      </div>
+
+      {!traderStatus ? (
+        <div className="card">
+          <div className="text-white font-semibold">Trader status unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
+        </div>
+      ) : !traderStatus.available ? (
+        <div className="card">
+          <div className="text-white font-semibold">Trader unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">{traderStatus.reason}</div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="card">
+              <div className="text-slate-400 text-sm">Mode</div>
+              <div className="text-2xl font-bold mt-2 capitalize">{traderStatus.mode}</div>
+              <div className="text-slate-500 text-xs mt-2">last run: {isoToHuman(traderStatus.lastRunTs)}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-sm">Equity</div>
+              <div className="text-2xl font-bold mt-2">{fmtUsd(traderStatus.equityUsd)}</div>
+              <div className="text-slate-500 text-xs mt-2">cash: {fmtUsd(traderStatus.cashUsd)}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-sm">Open positions</div>
+              <div className="text-2xl font-bold mt-2">{traderStatus.openPositions.length}</div>
+              <div className="text-slate-500 text-xs mt-2">open orders: {traderStatus.openOrdersCount}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-sm">Kill switch</div>
+              <div className={`text-xl font-bold mt-2 ${traderStatus.killSwitchEnabled ? 'text-rose-300' : 'text-emerald-300'}`}>
+                {traderStatus.killSwitchEnabled ? 'ENABLED' : 'DISABLED'}
+              </div>
+              <button
+                onClick={() => toggleKillSwitch(!traderStatus.killSwitchEnabled)}
+                disabled={killSwitchBusy}
+                className="mt-3 text-xs px-3 py-2 border border-slate-600 rounded text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+              >
+                {killSwitchBusy ? 'Saving…' : traderStatus.killSwitchEnabled ? 'Disable kill switch' : 'Enable kill switch'}
+              </button>
+            </div>
+          </div>
+
+          {killSwitchNotice && (
+            <div className={`text-sm ${killSwitchNotice.toLowerCase().includes('failed') ? 'text-rose-200' : 'text-slate-200'}`}>{killSwitchNotice}</div>
+          )}
+
+          <div className="card">
+            <div className="text-white font-semibold">Runtime</div>
+            <div className="text-slate-400 text-xs mt-1">products: {traderStatus.products.length ? traderStatus.products.join(', ') : 'n/a'}</div>
+            {traderStatus.lastError ? (
+              <div className="mt-3 bg-rose-950/40 border border-rose-900 rounded-lg p-3">
+                <div className="text-rose-200 text-xs uppercase tracking-wide">Last error</div>
+                <pre className="text-xs text-rose-100 mt-2 whitespace-pre-wrap">{traderStatus.lastError}</pre>
+              </div>
+            ) : (
+              <div className="text-slate-500 text-xs mt-3">No error detected in recent `trader.log` tail.</div>
+            )}
+          </div>
+
+          <div className="card p-0 overflow-hidden">
+            <div className="px-4 py-3 border-b border-slate-800">
+              <div className="text-white font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
+            </div>
+            {traderStatus.openPositions.length === 0 ? (
+              <div className="px-4 py-4 text-slate-400 text-sm">No open positions.</div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="min-w-[760px] w-full text-xs">
+                  <thead className="bg-slate-900/70">
+                    <tr className="text-slate-400">
+                      <th className="text-left px-3 py-2 font-medium">product</th>
+                      <th className="text-left px-3 py-2 font-medium">qty</th>
+                      <th className="text-left px-3 py-2 font-medium">entry</th>
+                      <th className="text-left px-3 py-2 font-medium">mark</th>
+                      <th className="text-left px-3 py-2 font-medium">unrealized pnl</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {traderStatus.openPositions.map((row) => (
+                      <tr key={row.product} className="border-t border-slate-800">
+                        <td className="px-3 py-2 text-slate-100">{row.product}</td>
+                        <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qty)}</td>
+                        <td className="px-3 py-2 text-slate-300">{fmtUsd(row.entryPrice)}</td>
+                        <td className="px-3 py-2 text-slate-300">{fmtUsd(row.markPrice)}</td>
+                        <td className={`px-3 py-2 ${typeof row.unrealizedPnlUsd === 'number' && row.unrealizedPnlUsd < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                          {fmtUsd(row.unrealizedPnlUsd)}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+            <div className="card">
+              <div className="text-slate-400 text-xs">Win rate</div>
+              <div className="text-2xl font-bold mt-2">{pct(traderStats.winRate)}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">Total PnL (recent)</div>
+              <div className={`text-2xl font-bold mt-2 ${typeof traderStats.totalPnl === 'number' && traderStats.totalPnl < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                {fmtUsd(traderStats.totalPnl)}
+              </div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">Max drawdown (recent)</div>
+              <div className="text-2xl font-bold mt-2 text-rose-200">{fmtUsd(traderStats.maxDrawdown)}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-400 text-xs">Trades/day (recent)</div>
+              <div className="text-2xl font-bold mt-2">{fmtNumber(traderStats.tradesPerDay, 2)}</div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {!traderTrades ? (
+        <div className="card">
+          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
+        </div>
+      ) : !traderTrades.available ? (
+        <div className="card">
+          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">{traderTrades.reason}</div>
+        </div>
+      ) : (
+        <div className="card p-0 overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-800">
+            <div className="text-white font-semibold">Recent Trades (last {traderRows.length})</div>
+          </div>
+          {traderRows.length === 0 ? (
+            <div className="px-4 py-4 text-slate-400 text-sm">No trades in trades.jsonl yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="min-w-[980px] w-full text-xs">
+                <thead className="bg-slate-900/70">
+                  <tr className="text-slate-400">
+                    <th className="text-left px-3 py-2 font-medium">ts</th>
+                    <th className="text-left px-3 py-2 font-medium">product</th>
+                    <th className="text-left px-3 py-2 font-medium">side</th>
+                    <th className="text-left px-3 py-2 font-medium">qty</th>
+                    <th className="text-left px-3 py-2 font-medium">price</th>
+                    <th className="text-left px-3 py-2 font-medium">fees</th>
+                    <th className="text-left px-3 py-2 font-medium">pnl</th>
+                    <th className="text-left px-3 py-2 font-medium">reason</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {traderRows.map((row, idx) => (
+                    <tr key={`${row.ts || 'na'}-${row.product}-${idx}`} className="border-t border-slate-800">
+                      <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{isoToHuman(row.ts)}</td>
+                      <td className="px-3 py-2 text-slate-100">{row.product}</td>
+                      <td className="px-3 py-2 text-slate-300">{row.side || 'n/a'}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qty)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.price)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.fees)}</td>
+                      <td className={`px-3 py-2 ${typeof row.pnlUsd === 'number' && row.pnlUsd < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                        {fmtUsd(row.pnlUsd)}
+                      </td>
+                      <td className="px-3 py-2 text-slate-300 max-w-[320px] truncate" title={row.reason || ''}>
+                        {row.reason || 'n/a'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   )
 
@@ -1132,6 +1509,7 @@ export default function Home() {
 
             <main className="px-4 md:px-6 py-6">
               {activeTab === 'overview' && <OverviewView />}
+              {activeTab === 'trader' && <TraderView />}
               {activeTab === 'projects' && <ProjectsView />}
               {activeTab === 'tasks' && <TasksView />}
               {activeTab === 'jobs' && <JobsView />}
