@@ -1,4 +1,5 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
+import { ORCHESTRATOR_HELPER_COMMANDS } from '../../../lib/swarm'
 
 type SwarmHelpersResponse =
   | {
@@ -89,9 +90,12 @@ function isValidProjectId(value: string): boolean {
   return /^[a-zA-Z0-9._-]+$/.test(value)
 }
 
-function isValidRouteTarget(value: string): boolean {
-  if (!value || value.length > 120) return false
-  return /^(?:channel:)?[0-9]{6,}$/.test(value)
+function isValidRouteTarget(value: string, channel: string): boolean {
+  if (!value || value.length > 200) return false
+  if (channel === 'discord') {
+    return /^(?:channel:)?[0-9]{6,}$/.test(value)
+  }
+  return !/[\r\n]/.test(value)
 }
 
 function isValidChannel(value: string): boolean {
@@ -104,10 +108,7 @@ export async function buildSwarmHelpersResponse(
   deps: SwarmHelpersDependencies,
 ): Promise<{ statusCode: number; body: SwarmHelpersResponse }> {
   const supportedCommands: Array<'route' | 'retry'> = ['route', 'retry']
-  const commandTemplates = {
-    route: 'python3 .clawdbot/orchestrator.py route --project <project-id> --target <channel-or-thread-id>',
-    retry: 'python3 .clawdbot/orchestrator.py retry --status <failed|needs_attention> [--task-id <id>] [--project <project-id>]',
-  }
+  const commandTemplates = ORCHESTRATOR_HELPER_COMMANDS
 
   if (request.method && request.method !== 'GET' && request.method !== 'POST') {
     return {
@@ -179,13 +180,16 @@ export async function buildSwarmHelpersResponse(
       }
     }
 
-    if (!isValidRouteTarget(target)) {
+    if (!isValidRouteTarget(target, channel)) {
       return {
         statusCode: 200,
         body: {
           dataSource: 'clawdbot_swarm_helpers',
           available: false,
-          reason: 'Invalid target format. Use digits or channel:<digits>.',
+          reason:
+            channel === 'discord'
+              ? 'Invalid target format. Use digits or channel:<digits>.'
+              : 'Invalid target format. Use a non-empty single-line value.',
           lastUpdated: nowIso(deps),
         },
       }
@@ -345,4 +349,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const result = await buildSwarmHelpersResponse(req, deps)
   return res.status(result.statusCode).json(result.body)
 }
-

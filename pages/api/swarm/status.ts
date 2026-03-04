@@ -1,9 +1,10 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import type {
-  PublicSwarmTask,
-  SwarmConfig,
-  SwarmTaskNotificationKind,
-  SwarmTaskRecord,
+import {
+  ORCHESTRATOR_HELPER_COMMANDS,
+  type PublicSwarmTask,
+  type SwarmConfig,
+  type SwarmTaskNotificationKind,
+  type SwarmTaskRecord,
 } from '../../../lib/swarm'
 
 type SwarmStatusResponse =
@@ -283,10 +284,7 @@ export async function buildSwarmStatusResponse(
             progressOnCiGreen: doneCriteria?.progressOnCiGreen === true,
           },
           notifications: notificationSettings,
-          helperCommands: {
-            route: 'python3 .clawdbot/orchestrator.py route --project <project-id> --target <channel-or-thread-id>',
-            retry: 'python3 .clawdbot/orchestrator.py retry --status <failed|needs_attention> [--task-id <id>] [--project <project-id>]',
-          },
+          helperCommands: ORCHESTRATOR_HELPER_COMMANDS,
         },
         notificationRoutes,
         filters: {

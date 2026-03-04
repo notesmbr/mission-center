@@ -21,6 +21,9 @@ test('buildSwarmHelpersResponse supports GET metadata', async () => {
   assert.equal(result.body.available, true)
   if (result.body.available) {
     assert.deepEqual(result.body.supportedCommands, ['route', 'retry'])
+    assert.equal(result.body.commandTemplates.route.includes('--channel <channel>'), true)
+    assert.equal(result.body.commandTemplates.retry.includes('[--limit <n>]'), true)
+    assert.equal(result.body.commandTemplates.retry.includes('[--reset-attempts]'), true)
   }
 })
 
@@ -78,3 +81,25 @@ test('buildSwarmHelpersResponse executes retry with validated args', async () =>
   }
 })
 
+test('buildSwarmHelpersResponse allows non-discord route targets', async () => {
+  let capturedArgs: string[] = []
+  const result = await buildSwarmHelpersResponse(
+    {
+      method: 'POST',
+      body: {
+        command: 'route',
+        projectId: 'mission-center',
+        target: 'ops-alerts-thread',
+        channel: 'slack',
+      },
+    } as any,
+    makeDeps(async (args) => {
+      capturedArgs = args
+      return JSON.stringify({ updated: true })
+    }),
+  )
+
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.available, true)
+  assert.deepEqual(capturedArgs, ['route', '--project', 'mission-center', '--target', 'ops-alerts-thread', '--channel', 'slack'])
+})

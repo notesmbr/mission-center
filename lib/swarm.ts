@@ -89,6 +89,12 @@ export type PublicSwarmTaskChecks = {
 export const NOTIFICATION_KINDS = ['readyForReview', 'researchComplete', 'needsAttention', 'taskFailed'] as const
 export type SwarmTaskNotificationKind = (typeof NOTIFICATION_KINDS)[number]
 
+export const ORCHESTRATOR_HELPER_COMMANDS = {
+  route: 'python3 .clawdbot/orchestrator.py route --project <project-id> --target <channel-or-thread-id> [--channel <channel>]',
+  retry:
+    'python3 .clawdbot/orchestrator.py retry --status <failed|needs_attention> [--task-id <id>] [--project <project-id>] [--limit <n>] [--reset-attempts]',
+} as const
+
 export type SwarmTaskNotificationState = {
   kind: SwarmTaskNotificationKind
   sent: boolean
@@ -452,6 +458,7 @@ export default {
   CLAW_WORKTREES_DIR,
   TASK_LOG_SUFFIX,
   KNOWN_TASK_STATUSES,
+  ORCHESTRATOR_HELPER_COMMANDS,
   getSwarmHostAvailability,
   deriveTaskNotification,
   isPathInsideOrEqual,

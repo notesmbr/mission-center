@@ -124,10 +124,12 @@ export async function buildSwarmTaskDetailsResponse(
         task,
         tmuxAttachCommand: task.tmuxSession ? `tmux attach -t ${task.tmuxSession}` : null,
         helperCommands: {
-          retryTask: `python3 .clawdbot/orchestrator.py retry --task-id ${task.id} --status ${retryStatus}`,
-          retryProjectFailed: `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status failed`,
-          retryProjectNeedsAttention: `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status needs_attention`,
-          routeProjectNotifications: `python3 .clawdbot/orchestrator.py route --project ${projectId} --target <channel-or-thread-id>`,
+          retryTask: `python3 .clawdbot/orchestrator.py retry --task-id ${task.id} --status ${retryStatus} [--reset-attempts]`,
+          retryProjectFailed: `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status failed [--limit <n>] [--reset-attempts]`,
+          retryProjectNeedsAttention:
+            `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status needs_attention [--limit <n>] [--reset-attempts]`,
+          routeProjectNotifications:
+            `python3 .clawdbot/orchestrator.py route --project ${projectId} --target <channel-or-thread-id> [--channel <channel>]`,
         },
         log: deps.readTaskSessionLogTail(rawTask, 80),
         lastUpdated: nowIso(deps),
