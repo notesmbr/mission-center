@@ -53,6 +53,18 @@ test('buildSwarmStatusResponse returns summary/grouping/filter metadata', async 
         { id: 'mission-center', name: 'Mission Center', enabled: true },
         { id: 'triplatch-ios', name: 'TripLatch', enabled: true },
       ],
+      doneCriteria: {
+        progressOnCiGreen: true,
+      },
+      notifications: {
+        readyForReview: {
+          enabled: true,
+          channel: 'discord',
+          targets: {
+            'mission-center': '111',
+          },
+        },
+      },
     }),
     sanitizeTasks,
     getSwarmHostAvailability: () => ({ available: true }),
@@ -68,6 +80,9 @@ test('buildSwarmStatusResponse returns summary/grouping/filter metadata', async 
     assert.equal(result.body.summary.running, 1)
     assert.equal(result.body.summary.needs_attention, 1)
     assert.equal(result.body.groupedTasks.length, 2)
+    assert.equal(result.body.projectSummaries.length, 2)
+    assert.equal(result.body.orchestrator.doneCriteria.progressOnCiGreen, true)
+    assert.equal(result.body.notificationRoutes[0]?.projectId, 'mission-center')
     assert.equal(result.body.filters.projectIds.includes('mission-center'), true)
     assert.equal(result.body.filters.agents.includes('codex'), true)
   }
@@ -121,6 +136,7 @@ test('buildSwarmTaskDetailsResponse returns task + tmux attach command + log tai
   if (result.body.available) {
     assert.equal(result.body.task.id, 'task-1')
     assert.equal(result.body.tmuxAttachCommand, 'tmux attach -t code-task-1')
+    assert.equal(result.body.helperCommands.retryTask.includes('orchestrator.py retry --task-id task-1'), true)
     assert.equal(result.body.log.available, true)
     assert.equal('prompt' in result.body.task, false)
   }

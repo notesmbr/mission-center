@@ -7,6 +7,12 @@ type SwarmTaskDetailsResponse =
       available: true
       task: PublicSwarmTask
       tmuxAttachCommand: string | null
+      helperCommands: {
+        retryTask: string
+        retryProjectFailed: string
+        retryProjectNeedsAttention: string
+        routeProjectNotifications: string
+      }
       log: TaskLogTail
       lastUpdated: string
     }
@@ -108,6 +114,8 @@ export async function buildSwarmTaskDetailsResponse(
     }
 
     const task = deps.sanitizeTask(rawTask)
+    const projectId = task.projectId || 'unassigned'
+    const retryStatus = task.status === 'needs_attention' ? 'needs_attention' : 'failed'
     return {
       statusCode: 200,
       body: {
@@ -115,6 +123,12 @@ export async function buildSwarmTaskDetailsResponse(
         available: true,
         task,
         tmuxAttachCommand: task.tmuxSession ? `tmux attach -t ${task.tmuxSession}` : null,
+        helperCommands: {
+          retryTask: `python3 .clawdbot/orchestrator.py retry --task-id ${task.id} --status ${retryStatus}`,
+          retryProjectFailed: `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status failed`,
+          retryProjectNeedsAttention: `python3 .clawdbot/orchestrator.py retry --project ${projectId} --status needs_attention`,
+          routeProjectNotifications: `python3 .clawdbot/orchestrator.py route --project ${projectId} --target <channel-or-thread-id>`,
+        },
         log: deps.readTaskSessionLogTail(rawTask, 80),
         lastUpdated: nowIso(deps),
       },
@@ -157,4 +171,3 @@ export default async function handler(req: NextApiRequest, res: NextApiResponse<
   const result = await buildSwarmTaskDetailsResponse(req, deps)
   return res.status(result.statusCode).json(result.body)
 }
-
