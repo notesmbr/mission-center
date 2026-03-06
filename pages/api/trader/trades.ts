@@ -60,7 +60,7 @@ export async function buildTraderTradesResponse(
   }
 
   try {
-    const limit = deps.normalizeTradesLimit(readQueryParam(request.query?.limit), 50, 500)
+    const limit = deps.normalizeTradesLimit(readQueryParam(request.query?.limit), 200, 500)
     return {
       statusCode: 200,
       body: {
