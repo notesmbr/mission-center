@@ -751,8 +751,10 @@ export default function Home() {
       setKillSwitchNotice('Failed to update kill switch.')
     } finally {
       setKillSwitchBusy(false)
+    }
+  }
 
-const runSwarmHelper = async (payload: Record<string, unknown>) => {
+  const runSwarmHelper = async (payload: Record<string, unknown>) => {
     setHelperActionLoading(true)
     setHelperActionResult('')
     try {
@@ -781,7 +783,6 @@ const runSwarmHelper = async (payload: Record<string, unknown>) => {
       setHelperActionResult('Helper command failed.')
     } finally {
       setHelperActionLoading(false)
-
     }
   }
 
