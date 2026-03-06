@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import Head from 'next/head'
 import Sidebar, { type NavKey } from '../components/Sidebar'
+import ThemeToggle from '../components/ThemeToggle'
+import { type ThemePreference } from '../lib/theme'
 
 // --- Types (kept intentionally minimal; backend is trusted local-only) ---
 
@@ -334,12 +336,12 @@ function pct(value?: number | null): string {
 }
 
 function taskStatusClass(status?: string): string {
-  if (status === 'running') return 'bg-blue-900/60 text-blue-200 border-blue-800'
-  if (status === 'queued') return 'bg-slate-700/60 text-slate-200 border-slate-600'
-  if (status === 'needs_attention') return 'bg-rose-900/60 text-rose-200 border-rose-800'
-  if (status === 'done') return 'bg-emerald-900/60 text-emerald-200 border-emerald-800'
-  if (status === 'failed') return 'bg-red-900/60 text-red-200 border-red-800'
-  return 'bg-slate-800 text-slate-200 border-slate-600'
+  if (status === 'running') return 'bg-blue-500/15 text-blue-700 border-blue-500/35 dark:bg-blue-900/60 dark:text-blue-200 dark:border-blue-800'
+  if (status === 'queued') return 'bg-slate-500/15 text-slate-700 border-slate-500/35 dark:bg-slate-700/60 dark:text-slate-200 dark:border-slate-600'
+  if (status === 'needs_attention') return 'bg-rose-500/15 text-rose-700 border-rose-500/35 dark:bg-rose-900/60 dark:text-rose-200 dark:border-rose-800'
+  if (status === 'done') return 'bg-emerald-500/15 text-emerald-700 border-emerald-500/35 dark:bg-emerald-900/60 dark:text-emerald-200 dark:border-emerald-800'
+  if (status === 'failed') return 'bg-red-500/15 text-red-700 border-red-500/35 dark:bg-red-900/60 dark:text-red-200 dark:border-red-800'
+  return 'bg-slate-500/15 text-slate-700 border-slate-500/35 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600'
 }
 
 function notificationKindLabel(kind?: string): string {
@@ -366,6 +368,22 @@ function scheduleLabel(job: any): string {
   return sch.kind
 }
 
+function sparklinePath(values: number[], width = 260, height = 62): string {
+  if (values.length < 2) return ''
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  const span = Math.max(1, max - min)
+  const stepX = width / (values.length - 1)
+
+  return values
+    .map((value, idx) => {
+      const x = idx * stepX
+      const y = height - ((value - min) / span) * height
+      return `${idx === 0 ? 'M' : 'L'}${x.toFixed(1)},${y.toFixed(1)}`
+    })
+    .join(' ')
+}
+
 function groupBy<T>(items: T[], keyFn: (t: T) => string): Array<{ key: string; items: T[] }> {
   const m = new Map<string, T[]>()
   for (const item of items) {
@@ -379,7 +397,12 @@ function groupBy<T>(items: T[], keyFn: (t: T) => string): Array<{ key: string; i
     .sort((a, b) => a.key.localeCompare(b.key))
 }
 
-export default function Home() {
+type HomeProps = {
+  themePreference?: ThemePreference
+  onThemeChange?: (next: ThemePreference) => void
+}
+
+export default function Home({ themePreference = 'system', onThemeChange }: HomeProps) {
   const [activeTab, setActiveTab] = useState<NavKey>('overview')
 
   const [selectedProject, setSelectedProject] = useState<string>('all')
@@ -709,6 +732,21 @@ export default function Home() {
     }
   }, [traderTrades])
 
+  const traderEquityTrend = useMemo(() => {
+    if (!traderRows.length) return [] as number[]
+
+    const sorted = [...traderRows].sort((a, b) => Date.parse(a.closeTs || '') - Date.parse(b.closeTs || ''))
+    let running = 0
+    const cumulative = sorted
+      .map((row) => {
+        if (typeof row.pnlUsd === 'number') running += row.pnlUsd
+        return running
+      })
+      .slice(-24)
+
+    return cumulative
+  }, [traderRows])
+
   const filteredJobs = useMemo(() => {
     const jobs = cronData && cronData.available ? cronData.jobs : []
     if (selectedProject === 'all') return jobs
@@ -823,13 +861,13 @@ export default function Home() {
   const OverviewView = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="text-white text-lg font-semibold">Overview</div>
+        <div className="text-slate-100 text-lg font-semibold">Overview</div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s • last {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : 'n/a'}</div>
       </div>
 
       {!statusData ? (
         <div className="card">
-          <div className="text-white font-semibold">OpenClaw status unavailable</div>
+          <div className="text-slate-100 font-semibold">OpenClaw status unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : statusData.available ? (
@@ -857,14 +895,14 @@ export default function Home() {
         </div>
       ) : (
         <div className="card">
-          <div className="text-white font-semibold">OpenClaw unreachable</div>
+          <div className="text-slate-100 font-semibold">OpenClaw unreachable</div>
           <div className="text-slate-400 text-sm mt-1">{statusData.reason}</div>
         </div>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="card">
-          <div className="text-white font-semibold">Quick links</div>
+          <div className="text-slate-100 font-semibold">Quick links</div>
           <div className="mt-3 space-y-2 text-sm">
             <a href="https://mbrs-mac-mini.tail9b718b.ts.net/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline block">
               OpenClaw Control UI
@@ -876,7 +914,7 @@ export default function Home() {
         </div>
 
         <div className="card">
-          <div className="text-white font-semibold">Active agents (last 5m)</div>
+          <div className="text-slate-100 font-semibold">Active agents (last 5m)</div>
           {!agentsData ? (
             <div className="text-slate-400 text-sm mt-2">No payload yet.</div>
           ) : !agentsData.available ? (
@@ -895,7 +933,7 @@ export default function Home() {
                     </div>
                     <button
                       onClick={() => copyText(s.key)}
-                      className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
+                      className="btn-ghost text-xs px-2 py-1 rounded"
                     >
                       Copy key
                     </button>
@@ -913,7 +951,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Trader</div>
+          <div className="text-slate-100 text-lg font-semibold">Trader</div>
           <div className="text-slate-500 text-xs">Crypto trader (local-only allowlisted files)</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s • last {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : 'n/a'}</div>
@@ -921,12 +959,12 @@ export default function Home() {
 
       {!traderStatus ? (
         <div className="card">
-          <div className="text-white font-semibold">Trader status unavailable</div>
+          <div className="text-slate-100 font-semibold">Trader status unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !traderStatus.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Trader unavailable</div>
+          <div className="text-slate-100 font-semibold">Trader unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{traderStatus.reason}</div>
         </div>
       ) : (
@@ -955,10 +993,38 @@ export default function Home() {
               <button
                 onClick={() => toggleKillSwitch(!traderStatus.killSwitchEnabled)}
                 disabled={killSwitchBusy}
-                className="mt-3 text-xs px-3 py-2 border border-slate-600 rounded text-slate-200 hover:bg-slate-800 disabled:opacity-60"
+                className="mt-3 btn-ghost text-xs px-3 py-2 disabled:opacity-60"
               >
                 {killSwitchBusy ? 'Saving…' : traderStatus.killSwitchEnabled ? 'Disable kill switch' : 'Enable kill switch'}
               </button>
+            </div>
+
+            <div className="card md:col-span-2 xl:col-span-4">
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <div className="text-slate-400 text-xs">Momentum widget</div>
+                  <div className="text-slate-100 font-semibold mt-1">Equity Trend (recent trades)</div>
+                </div>
+                <span className="status-chip border-sky-500/35 bg-sky-500/10 text-sky-300">
+                  {traderEquityTrend.length || 0} points
+                </span>
+              </div>
+              {traderEquityTrend.length >= 2 ? (
+                <div className="mt-3 rounded-lg border border-slate-700 bg-slate-950/30 p-3">
+                  <svg viewBox="0 0 260 62" className="w-full h-20" role="img" aria-label="Recent equity trend sparkline">
+                    <path
+                      d={sparklinePath(traderEquityTrend, 260, 62)}
+                      fill="none"
+                      stroke="currentColor"
+                      className={`${(traderEquityTrend[traderEquityTrend.length - 1] || 0) < 0 ? 'text-rose-300' : 'text-emerald-300'}`}
+                      strokeWidth="2.4"
+                      strokeLinecap="round"
+                    />
+                  </svg>
+                </div>
+              ) : (
+                <div className="text-slate-500 text-xs mt-3">Needs at least two trade samples to render sparkline.</div>
+              )}
             </div>
           </div>
 
@@ -967,7 +1033,7 @@ export default function Home() {
           )}
 
           <div className="card">
-            <div className="text-white font-semibold">Runtime</div>
+            <div className="text-slate-100 font-semibold">Runtime</div>
             <div className="text-slate-400 text-xs mt-1">products: {traderStatus.products.length ? traderStatus.products.join(', ') : 'n/a'}</div>
             {traderStatus.lastError ? (
               <div className="mt-3 bg-rose-950/40 border border-rose-900 rounded-lg p-3">
@@ -981,7 +1047,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="card">
-              <div className="text-white font-semibold">Risk</div>
+              <div className="text-slate-100 font-semibold">Risk</div>
               <div className="mt-2 text-sm space-y-1">
                 <div className="flex items-center justify-between"><span className="text-slate-400">drawdown halt</span><span className={traderStatus.risk.drawdownHalt ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.drawdownHalt ? 'yes' : 'no'}</span></div>
                 <div className="flex items-center justify-between"><span className="text-slate-400">cooldown active</span><span className={traderStatus.risk.cooldownActive ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.cooldownActive ? 'yes' : 'no'}</span></div>
@@ -993,7 +1059,7 @@ export default function Home() {
             </div>
 
             <div className="card">
-              <div className="text-white font-semibold">Strategy + AI strategist</div>
+              <div className="text-slate-100 font-semibold">Strategy + AI strategist</div>
               <div className="text-slate-400 text-xs mt-1">From state.json (strategy_params, ai_strategist)</div>
 
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1027,7 +1093,7 @@ export default function Home() {
 
           <div className="card p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-800">
-              <div className="text-white font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
+              <div className="text-slate-100 font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
             </div>
             {traderStatus.openPositions.length === 0 ? (
               <div className="px-4 py-4 text-slate-400 text-sm">No open positions.</div>
@@ -1092,24 +1158,24 @@ export default function Home() {
 
       {!traderTrades ? (
         <div className="card">
-          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-100 font-semibold">Recent trades unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !traderTrades.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-100 font-semibold">Recent trades unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{traderTrades.reason}</div>
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
-            <div className="text-white font-semibold">Recent Trades (last {traderRows.length})</div>
+            <div className="text-slate-100 font-semibold">Recent Trades (last {traderRows.length})</div>
             <label className="text-xs text-slate-400 flex items-center gap-2">
               Rows
               <select
                 value={traderTradesLimit}
                 onChange={(e) => setTraderTradesLimit(Number(e.target.value) || 200)}
-                className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1"
+                className="input-shell text-xs rounded px-2 py-1"
               >
                 {TRADER_TRADE_LIMIT_OPTIONS.map((n) => (
                   <option key={n} value={n}>
@@ -1172,7 +1238,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Projects</div>
+          <div className="text-slate-100 text-lg font-semibold">Projects</div>
           <div className="text-slate-500 text-xs">Big-picture context + current work by project</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -1180,17 +1246,17 @@ export default function Home() {
 
       {!projectsData ? (
         <div className="card">
-          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-100 font-semibold">Projects unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !projectsData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-100 font-semibold">Projects unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{projectsData.reason}</div>
         </div>
       ) : projectsData.projects.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No projects configured</div>
+          <div className="text-slate-100 font-semibold">No projects configured</div>
           <div className="text-slate-400 text-sm mt-1">Add projects in .clawdbot/config.json.</div>
         </div>
       ) : (
@@ -1206,7 +1272,7 @@ export default function Home() {
                 <div key={p.id} className="card">
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-white text-lg font-semibold truncate">{p.name || p.id}</div>
+                      <div className="text-slate-100 text-lg font-semibold truncate">{p.name || p.id}</div>
                       <div className="text-slate-500 text-xs mt-1 truncate">projectId: {p.id}{p.repoRelative ? ` • repo: ${p.repoRelative}` : ''}</div>
                     </div>
 
@@ -1229,7 +1295,7 @@ export default function Home() {
                   {(running.length > 0 || needs.length > 0) && (
                     <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
                       <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
-                        <div className="text-white font-semibold">Running</div>
+                        <div className="text-slate-100 font-semibold">Running</div>
                         {running.length === 0 ? (
                           <div className="text-slate-400 text-sm mt-2">None</div>
                         ) : (
@@ -1253,7 +1319,7 @@ export default function Home() {
                       </div>
 
                       <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
-                        <div className="text-white font-semibold">Needs attention</div>
+                        <div className="text-slate-100 font-semibold">Needs attention</div>
                         {needs.length === 0 ? (
                           <div className="text-slate-400 text-sm mt-2">None</div>
                         ) : (
@@ -1280,7 +1346,7 @@ export default function Home() {
                   )}
 
                   <div className="mt-4">
-                    <div className="text-white font-semibold">Project context</div>
+                    <div className="text-slate-100 font-semibold">Project context</div>
                     <div className="text-slate-500 text-xs mt-1">Pulled from README/AppStoreAssets and (optionally) .clawdbot/projects vault files.</div>
 
                     {p.docs.length === 0 ? (
@@ -1310,7 +1376,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <div className="text-white text-lg font-semibold">Tasks</div>
+          <div className="text-slate-100 text-lg font-semibold">Tasks</div>
           <div className="text-slate-500 text-xs">Swarm tasks from .clawdbot/active-tasks.json • click a task for details</div>
         </div>
 
@@ -1319,7 +1385,7 @@ export default function Home() {
             onClick={() => setTaskViewMode('board')}
             className={
               'text-xs px-3 py-2 border rounded-lg ' +
-              (taskViewMode === 'board' ? 'border-slate-500 bg-slate-800 text-white' : 'border-slate-700 text-slate-200 hover:bg-slate-900')
+              (taskViewMode === 'board' ? 'border-slate-500 bg-slate-800 text-slate-100' : 'border-slate-700 text-slate-200 hover:bg-slate-900')
             }
           >
             Board
@@ -1328,7 +1394,7 @@ export default function Home() {
             onClick={() => setTaskViewMode('table')}
             className={
               'text-xs px-3 py-2 border rounded-lg ' +
-              (taskViewMode === 'table' ? 'border-slate-500 bg-slate-800 text-white' : 'border-slate-700 text-slate-200 hover:bg-slate-900')
+              (taskViewMode === 'table' ? 'border-slate-500 bg-slate-800 text-slate-100' : 'border-slate-700 text-slate-200 hover:bg-slate-900')
             }
           >
             Table
@@ -1338,25 +1404,25 @@ export default function Home() {
 
       {!swarmData ? (
         <div className="card">
-          <div className="text-white font-semibold">Tasks unavailable</div>
+          <div className="text-slate-100 font-semibold">Tasks unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !swarmData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Tasks unavailable</div>
+          <div className="text-slate-100 font-semibold">Tasks unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{swarmData.reason}</div>
         </div>
       ) : (
         <>
           <div className="card">
-            <div className="text-white font-semibold">Filters</div>
+            <div className="text-slate-100 font-semibold">Filters</div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div>
                 <label className="text-slate-500 text-xs block mb-1">Agent</label>
                 <select
                   value={taskAgentFilter}
                   onChange={(e) => setTaskAgentFilter(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                  className="w-full input-shell text-sm rounded-lg px-3 py-2"
                 >
                   {taskAgentOptions.map((a) => (
                     <option key={a} value={a}>
@@ -1370,7 +1436,7 @@ export default function Home() {
                 <select
                   value={taskStatusFilter}
                   onChange={(e) => setTaskStatusFilter(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                  className="w-full input-shell text-sm rounded-lg px-3 py-2"
                 >
                   <option value="all">all</option>
                   <option value="queued">queued</option>
@@ -1388,7 +1454,7 @@ export default function Home() {
                   value={taskSearch}
                   onChange={(e) => setTaskSearch(e.target.value)}
                   placeholder="mission-center..."
-                  className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                  className="w-full input-shell text-sm rounded-lg px-3 py-2"
                 />
               </div>
             </div>
@@ -1401,7 +1467,7 @@ export default function Home() {
           </div>
 
           <div className="card">
-            <div className="text-white font-semibold">Per-project counts</div>
+            <div className="text-slate-100 font-semibold">Per-project counts</div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-[760px] w-full text-xs">
                 <thead className="text-slate-500">
@@ -1435,7 +1501,7 @@ export default function Home() {
           </div>
 
           <div className="card">
-            <div className="text-white font-semibold">Helper commands</div>
+            <div className="text-slate-100 font-semibold">Helper commands</div>
             <div className="text-slate-500 text-xs mt-1">Orchestrator helpers: route + retry</div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
               {Object.entries(swarmData.orchestrator.notifications).map(([kind, cfg]) => (
@@ -1455,7 +1521,7 @@ export default function Home() {
                   <select
                     value={routeProjectId}
                     onChange={(e) => setRouteProjectId(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                    className="input-shell text-xs rounded-lg px-2 py-2"
                   >
                     {projectOptions
                       .filter((id) => id !== 'all')
@@ -1469,19 +1535,19 @@ export default function Home() {
                     value={routeTarget}
                     onChange={(e) => setRouteTarget(e.target.value)}
                     placeholder="channel id"
-                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                    className="input-shell text-xs rounded-lg px-2 py-2"
                   />
                   <input
                     value={routeChannel}
                     onChange={(e) => setRouteChannel(e.target.value)}
                     placeholder="discord"
-                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                    className="input-shell text-xs rounded-lg px-2 py-2"
                   />
                 </div>
                 <button
                   disabled={helperActionLoading || !routeProjectId || !routeTarget}
                   onClick={() => runSwarmHelper({ command: 'route', projectId: routeProjectId, target: routeTarget, channel: routeChannel || 'discord' })}
-                  className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  className="btn-ghost text-xs px-3 py-2"
                 >
                   {helperActionLoading ? 'Applying…' : 'Apply Route'}
                 </button>
@@ -1500,7 +1566,7 @@ export default function Home() {
                         projectId: selectedProject === 'all' ? routeProjectId : selectedProject,
                       })
                     }
-                    className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-ghost text-xs px-3 py-2"
                   >
                     Retry Failed (Project)
                   </button>
@@ -1513,7 +1579,7 @@ export default function Home() {
                         projectId: selectedProject === 'all' ? routeProjectId : selectedProject,
                       })
                     }
-                    className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="btn-ghost text-xs px-3 py-2"
                   >
                     Retry Needs Attention
                   </button>
@@ -1528,7 +1594,7 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               {(['queued', 'running', 'needs_attention', 'done', 'failed'] as const).map((col) => (
                 <div key={col} className="card">
-                  <div className="text-white font-semibold">{col}</div>
+                  <div className="text-slate-100 font-semibold">{col}</div>
                   <div className="mt-4 space-y-3">
                     {taskBuckets[col].length === 0 && <div className="text-slate-400 text-sm">None</div>}
                     {taskBuckets[col].map((t) => (
@@ -1628,12 +1694,12 @@ export default function Home() {
           >
             <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-white font-semibold truncate">Task details</div>
+                <div className="text-slate-100 font-semibold truncate">Task details</div>
                 <div className="text-slate-400 text-xs truncate">{selectedTaskId}</div>
               </div>
               <button
                 onClick={() => setSelectedTaskId('')}
-                className="text-slate-300 hover:text-white text-sm border border-slate-600 rounded px-2 py-1"
+                className="btn-ghost text-sm px-2 py-1 rounded"
               >
                 Close
               </button>
@@ -1680,7 +1746,7 @@ export default function Home() {
 
                   {taskDetails.task.checks && (
                     <div className="card">
-                      <div className="text-white font-semibold">Done-gate checks</div>
+                      <div className="text-slate-100 font-semibold">Done-gate checks</div>
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs">
                         {Object.entries(taskDetails.task.checks).map(([key, value]) => (
                           <div key={key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-2">
@@ -1695,20 +1761,20 @@ export default function Home() {
                   <div className="card space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-white font-semibold">tmux attach</div>
+                        <div className="text-slate-100 font-semibold">tmux attach</div>
                         <div className="text-slate-400 text-xs mt-1">{taskDetails.tmuxAttachCommand || 'No tmux session available.'}</div>
                       </div>
                       <button
                         disabled={!taskDetails.tmuxAttachCommand}
                         onClick={() => taskDetails.tmuxAttachCommand && copyText(taskDetails.tmuxAttachCommand)}
-                        className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        className="btn-ghost text-xs px-3 py-2"
                       >
                         Copy
                       </button>
                     </div>
                     {copiedText && <div className="text-slate-500 text-xs mt-2">Copied.</div>}
                     <div className="pt-2 border-t border-slate-700">
-                      <div className="text-white font-semibold">Helper commands</div>
+                      <div className="text-slate-100 font-semibold">Helper commands</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           disabled={helperActionLoading || !['failed', 'needs_attention'].includes(taskDetails.task.status)}
@@ -1719,19 +1785,19 @@ export default function Home() {
                               status: taskDetails.task.status === 'needs_attention' ? 'needs_attention' : 'failed',
                             })
                           }
-                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                          className="btn-ghost text-xs px-3 py-2"
                         >
                           {helperActionLoading ? 'Running…' : 'Retry Task'}
                         </button>
                         <button
                           onClick={() => copyText(taskDetails.helperCommands.retryTask)}
-                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800"
+                          className="btn-ghost text-xs px-3 py-2"
                         >
                           Copy Retry Command
                         </button>
                         <button
                           onClick={() => copyText(taskDetails.helperCommands.routeProjectNotifications)}
-                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800"
+                          className="btn-ghost text-xs px-3 py-2"
                         >
                           Copy Route Command
                         </button>
@@ -1740,7 +1806,7 @@ export default function Home() {
                   </div>
 
                   <div className="card">
-                    <div className="text-white font-semibold">Session log (local-only, redacted)</div>
+                    <div className="text-slate-100 font-semibold">Session log (local-only, redacted)</div>
                     {taskDetails.log.available ? (
                       <>
                         <div className="text-slate-500 text-xs mt-1">
@@ -1767,7 +1833,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Jobs</div>
+          <div className="text-slate-100 text-lg font-semibold">Jobs</div>
           <div className="text-slate-500 text-xs">Cron jobs (OpenClaw scheduler) — not the same as swarm tasks</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -1775,17 +1841,17 @@ export default function Home() {
 
       {!cronData ? (
         <div className="card">
-          <div className="text-white font-semibold">Jobs unavailable</div>
+          <div className="text-slate-100 font-semibold">Jobs unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !cronData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Jobs unavailable</div>
+          <div className="text-slate-100 font-semibold">Jobs unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{cronData.reason}</div>
         </div>
       ) : cronData.jobs.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No cron jobs configured</div>
+          <div className="text-slate-100 font-semibold">No cron jobs configured</div>
           <div className="text-slate-400 text-sm mt-1">You can add jobs via OpenClaw cron. This panel will populate automatically.</div>
         </div>
       ) : (
@@ -1844,7 +1910,7 @@ export default function Home() {
 
           {selectedJobId && (
             <div className="card">
-              <div className="text-white font-semibold">Job runs</div>
+              <div className="text-slate-100 font-semibold">Job runs</div>
               <div className="text-slate-500 text-xs mt-1">jobId: {selectedJobId}</div>
               {!cronRuns ? (
                 <div className="text-slate-400 text-sm mt-2">No runs payload.</div>
@@ -1875,7 +1941,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Agents</div>
+          <div className="text-slate-100 text-lg font-semibold">Agents</div>
           <div className="text-slate-500 text-xs">Recent OpenClaw sessions grouped by agentId</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -1883,12 +1949,12 @@ export default function Home() {
 
       {!agentsData ? (
         <div className="card">
-          <div className="text-white font-semibold">Agents unavailable</div>
+          <div className="text-slate-100 font-semibold">Agents unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !agentsData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Agents unavailable</div>
+          <div className="text-slate-100 font-semibold">Agents unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{agentsData.reason}</div>
         </div>
       ) : (
@@ -1896,7 +1962,7 @@ export default function Home() {
           {groupedAgentSessions.map((g) => (
             <div key={g.agentId} className="card">
               <div className="flex items-center justify-between">
-                <div className="text-white font-semibold">{g.agentId}</div>
+                <div className="text-slate-100 font-semibold">{g.agentId}</div>
                 <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
               </div>
 
@@ -1913,7 +1979,7 @@ export default function Home() {
 
                     <button
                       onClick={() => copyText(s.key)}
-                      className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
+                      className="btn-ghost text-xs px-2 py-1 rounded"
                     >
                       Copy key
                     </button>
@@ -1931,7 +1997,7 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-slate-950 flex items-center justify-center">
+      <div className="min-h-screen dashboard-bg flex items-center justify-center">
         <div className="text-slate-300">Loading Mission Center</div>
       </div>
     )
@@ -1945,7 +2011,7 @@ export default function Home() {
         <meta name="viewport" content="width=device-width, initial-scale=1" />
       </Head>
 
-      <div className="min-h-screen bg-slate-950">
+      <div className="min-h-screen dashboard-bg">
         <div className="flex flex-col md:flex-row min-h-screen">
           <Sidebar active={activeTab} onChange={setActiveTab} />
 
@@ -1953,16 +2019,29 @@ export default function Home() {
             <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
               <div className="px-4 md:px-6 py-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-white text-lg md:text-xl font-semibold tracking-wide truncate">Mission Center</div>
+                  <div className="text-slate-100 text-lg md:text-xl font-semibold tracking-wide truncate">Mission Center</div>
                   <div className="text-slate-400 text-xs mt-0.5 truncate">Task-first dashboard</div>
+                  <div className="mt-2 hidden md:flex items-center gap-2">
+                    <span className="status-chip border-emerald-500/35 bg-emerald-500/10 text-emerald-300">
+                      {openclawSummary?.reachable ? 'Gateway online' : 'Gateway unknown'}
+                    </span>
+                    <span className="status-chip border-blue-500/35 bg-blue-500/10 text-blue-300">
+                      {swarmData && swarmData.available ? `${swarmData.summary.running} running` : 'Tasks n/a'}
+                    </span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-3 shrink-0">
-                  <div className="text-xs text-slate-500">Project</div>
+                  <ThemeToggle
+                    value={themePreference}
+                    onChange={(next) => onThemeChange && onThemeChange(next)}
+                  />
+                  <div className="text-xs text-slate-500 hidden md:block">Project</div>
                   <select
                     value={selectedProject}
                     onChange={(e) => setSelectedProject(e.target.value)}
-                    className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+                    className="input-shell text-sm rounded-lg px-3 py-2"
+                    aria-label="Filter by project"
                   >
                     {projectOptions.map((p) => (
                       <option key={p} value={p}>
