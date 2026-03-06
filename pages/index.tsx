@@ -406,7 +406,7 @@ export default function Home() {
   const [taskDetailsLoading, setTaskDetailsLoading] = useState(false)
   const [helperActionLoading, setHelperActionLoading] = useState(false)
   const [helperActionResult, setHelperActionResult] = useState<string>('')
-  const [routeProjectId, setRouteProjectId] = useState<string>('mission-center')
+  const [routeProjectId, setRouteProjectId] = useState<string>('')
   const [routeTarget, setRouteTarget] = useState<string>('')
   const [routeChannel, setRouteChannel] = useState<string>('discord')
 
@@ -525,24 +525,35 @@ export default function Home() {
     return ['all', ...Array.from(set).sort()]
   }, [swarmData])
 
+  const routeProjectOptions = useMemo(() => {
+    if (swarmData && swarmData.available) {
+      const ids = swarmData.projects
+        .map((project) => String(project?.id || '').trim())
+        .filter(Boolean)
+      if (ids.length) return Array.from(new Set(ids)).sort()
+    }
+    return projectOptions.filter((id) => id !== 'all')
+  }, [swarmData, projectOptions])
+
   useEffect(() => {
     if (selectedProject === 'all') return
     if (!projectOptions.includes(selectedProject)) setSelectedProject('all')
   }, [projectOptions, selectedProject])
 
   useEffect(() => {
-    const projectIds = projectOptions.filter((id) => id !== 'all')
+    const projectIds = routeProjectOptions
     if (selectedProject !== 'all' && projectIds.includes(selectedProject)) {
       setRouteProjectId(selectedProject)
       return
     }
     if (!projectIds.includes(routeProjectId)) {
-      setRouteProjectId(projectIds[0] || 'mission-center')
+      setRouteProjectId(projectIds[0] || '')
     }
-  }, [projectOptions, selectedProject, routeProjectId])
+  }, [routeProjectOptions, selectedProject, routeProjectId])
 
   useEffect(() => {
     if (!swarmData || !swarmData.available) return
+    if (!routeProjectId) return
     const route = swarmData.notificationRoutes.find((entry) => entry.projectId === routeProjectId)
     const existing = route?.readyForReview || route?.researchComplete || route?.needsAttention || route?.taskFailed || ''
     if (existing && !routeTarget) {
@@ -716,6 +727,23 @@ export default function Home() {
     const re = new RegExp(`^\\[project:${selectedProject.replace(/[-/\\^$*+?.()|[\\]{}]/g, '\\$&')}\\]\\s+`)
     return jobs.filter((j: any) => re.test(String(j?.name || '')))
   }, [cronData, selectedProject])
+
+  useEffect(() => {
+    if (!selectedJobId) {
+      setCronRuns(null)
+      return
+    }
+    const stillVisible = filteredJobs.some((job: any) => String(job?.id || '') === selectedJobId)
+    if (!stillVisible) {
+      setSelectedJobId('')
+      setCronRuns(null)
+    }
+  }, [filteredJobs, selectedJobId])
+
+  const visibleProjects = useMemo(() => {
+    if (!projectsData || !projectsData.available) return [] as ProjectSummary[]
+    return projectsData.projects.filter((project) => selectedProject === 'all' || project.id === selectedProject)
+  }, [projectsData, selectedProject])
 
   const jobBuckets = useMemo(() => {
     const needs: any[] = []
@@ -1193,11 +1221,14 @@ export default function Home() {
           <div className="text-white font-semibold">No projects configured</div>
           <div className="text-slate-400 text-sm mt-1">Add projects in .clawdbot/config.json.</div>
         </div>
+      ) : visibleProjects.length === 0 ? (
+        <div className="card">
+          <div className="text-white font-semibold">No project summary for this filter</div>
+          <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
+        </div>
       ) : (
         <div className="space-y-4">
-          {projectsData.projects
-            .filter((p) => selectedProject === 'all' || p.id === selectedProject)
-            .map((p) => {
+          {visibleProjects.map((p) => {
               const tasks = (p.tasks || []) as any[]
               const needs = tasks.filter((t) => t.status === 'needs_attention' || t.status === 'failed')
               const running = tasks.filter((t) => t.status === 'running')
@@ -1457,13 +1488,17 @@ export default function Home() {
                     onChange={(e) => setRouteProjectId(e.target.value)}
                     className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
                   >
-                    {projectOptions
-                      .filter((id) => id !== 'all')
-                      .map((id) => (
+                    {routeProjectOptions.length === 0 ? (
+                      <option value="" disabled>
+                        No configured project
+                      </option>
+                    ) : (
+                      routeProjectOptions.map((id) => (
                         <option key={id} value={id}>
                           {id}
                         </option>
-                      ))}
+                      ))
+                    )}
                   </select>
                   <input
                     value={routeTarget}
@@ -1788,6 +1823,11 @@ export default function Home() {
           <div className="text-white font-semibold">No cron jobs configured</div>
           <div className="text-slate-400 text-sm mt-1">You can add jobs via OpenClaw cron. This panel will populate automatically.</div>
         </div>
+      ) : filteredJobs.length === 0 ? (
+        <div className="card">
+          <div className="text-white font-semibold">No jobs match this project filter</div>
+          <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1893,35 +1933,42 @@ export default function Home() {
         </div>
       ) : (
         <div className="space-y-3">
-          {groupedAgentSessions.map((g) => (
-            <div key={g.agentId} className="card">
-              <div className="flex items-center justify-between">
-                <div className="text-white font-semibold">{g.agentId}</div>
-                <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {g.sessions.slice(0, 12).map((s) => (
-                  <div key={s.key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-slate-100 truncate">
-                        {s.kind} • {s.model || 'model?'}
-                      </div>
-                      <div className="text-slate-500 text-xs truncate">updated {new Date(s.updatedAt).toLocaleString()}</div>
-                      <div className="text-slate-500 text-xs truncate">key: {s.key}</div>
-                    </div>
-
-                    <button
-                      onClick={() => copyText(s.key)}
-                      className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
-                    >
-                      Copy key
-                    </button>
-                  </div>
-                ))}
-              </div>
+          {groupedAgentSessions.length === 0 ? (
+            <div className="card">
+              <div className="text-white font-semibold">No recent sessions</div>
+              <div className="text-slate-400 text-sm mt-1">OpenClaw returned zero recent sessions.</div>
             </div>
-          ))}
+          ) : (
+            groupedAgentSessions.map((g) => (
+              <div key={g.agentId} className="card">
+                <div className="flex items-center justify-between">
+                  <div className="text-white font-semibold">{g.agentId}</div>
+                  <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {g.sessions.slice(0, 12).map((s) => (
+                    <div key={s.key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-slate-100 truncate">
+                          {s.kind} • {s.model || 'model?'}
+                        </div>
+                        <div className="text-slate-500 text-xs truncate">updated {new Date(s.updatedAt).toLocaleString()}</div>
+                        <div className="text-slate-500 text-xs truncate">key: {s.key}</div>
+                      </div>
+
+                      <button
+                        onClick={() => copyText(s.key)}
+                        className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
+                      >
+                        Copy key
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
 
           {copiedText && <div className="text-slate-500 text-xs">Copied.</div>}
         </div>
