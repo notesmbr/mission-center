@@ -50,7 +50,7 @@ export default function OptimizationsView({ data }: { data: OptimizationsData })
     <div className="space-y-8">
       {/* Header with Savings */}
       <div className="bg-gradient-to-r from-green-600/20 to-blue-600/20 border border-green-600/30 rounded-lg p-8">
-        <h2 className="text-2xl font-bold text-white mb-4">💰 Token Optimization Suite</h2>
+        <h2 className="text-2xl font-bold text-slate-100 mb-4">💰 Token Optimization Suite</h2>
         <div className="grid grid-cols-3 gap-6">
           <div>
             <p className="text-slate-400 text-sm mb-1">Current Spend</p>
@@ -72,7 +72,7 @@ export default function OptimizationsView({ data }: { data: OptimizationsData })
 
       {/* Optimizations Grid */}
       <div>
-        <h3 className="text-xl font-bold text-white mb-6">Implemented Optimizations</h3>
+        <h3 className="text-xl font-bold text-slate-100 mb-6">Implemented Optimizations</h3>
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {data.optimizations.map((opt) => (
             <div key={opt.id} className="bg-slate-900 border border-slate-700 rounded-lg p-6 hover:border-slate-600 transition">
@@ -80,7 +80,7 @@ export default function OptimizationsView({ data }: { data: OptimizationsData })
                 <div className="flex items-center gap-3">
                   <span className="text-2xl">{getDeployedIcon(opt.deployed)}</span>
                   <div>
-                    <h4 className="text-lg font-bold text-white">
+                    <h4 className="text-lg font-bold text-slate-100">
                       {opt.id}. {opt.name}
                     </h4>
                     <p className="text-slate-400 text-xs mt-1">{opt.location}</p>
@@ -147,7 +147,7 @@ export default function OptimizationsView({ data }: { data: OptimizationsData })
 
       {/* Documentation Reference */}
       <div>
-        <h3 className="text-xl font-bold text-white mb-4">📚 Documentation</h3>
+        <h3 className="text-xl font-bold text-slate-100 mb-4">📚 Documentation</h3>
         <div className="bg-slate-900 border border-slate-700 rounded-lg p-6">
           <p className="text-slate-400 text-sm mb-4">
             Each optimization has complete documentation in your workspace:
@@ -165,7 +165,7 @@ export default function OptimizationsView({ data }: { data: OptimizationsData })
 
       {/* Next Steps */}
       <div className="bg-slate-900 border border-slate-700 rounded-lg p-6">
-        <h3 className="text-lg font-bold text-white mb-4">🚀 Next Steps</h3>
+        <h3 className="text-lg font-bold text-slate-100 mb-4">🚀 Next Steps</h3>
         <div className="space-y-3 text-sm text-slate-300">
           <p>
             <strong>Right now:</strong> All 5 core optimizations are active. Start using immediately.

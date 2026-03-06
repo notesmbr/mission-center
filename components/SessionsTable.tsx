@@ -16,14 +16,14 @@ export default function SessionsTable({ sessions }: { sessions: SessionRow[] }) 
   return (
     <div className="card overflow-hidden">
       <div className="flex items-center justify-between">
-        <div className="text-white font-semibold">Recent Sessions</div>
+        <div className="text-slate-100 font-semibold">Recent Sessions</div>
         <div className="text-xs text-slate-400">from openclaw status --json</div>
       </div>
 
       <div className="mt-3 overflow-x-auto">
-        <table className="min-w-[720px] w-full text-sm">
+        <table className="table-shell min-w-[720px]">
           <thead>
-            <tr className="text-left text-slate-400">
+            <tr className="text-left">
               <th className="py-2 pr-3">Agent</th>
               <th className="py-2 pr-3">Kind</th>
               <th className="py-2 pr-3">Model</th>
@@ -34,7 +34,7 @@ export default function SessionsTable({ sessions }: { sessions: SessionRow[] }) 
           </thead>
           <tbody className="text-slate-200">
             {sessions.map((s) => (
-              <tr key={s.key} className="border-t border-slate-800/70">
+              <tr key={s.key}>
                 <td className="py-2 pr-3 whitespace-nowrap">{s.agentId}</td>
                 <td className="py-2 pr-3">{s.kind}</td>
                 <td className="py-2 pr-3 whitespace-nowrap">{s.model || '—'}</td>

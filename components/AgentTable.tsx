@@ -14,21 +14,21 @@ export default function AgentTable({ agents }: AgentTableProps) {
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active':
-        return 'text-green-400'
+        return 'text-emerald-500 dark:text-emerald-300'
       case 'idle':
-        return 'text-yellow-400'
+        return 'text-amber-500 dark:text-amber-300'
       default:
-        return 'text-red-400'
+        return 'text-rose-500 dark:text-rose-300'
     }
   }
 
   return (
     <div className="card overflow-hidden">
-      <h2 className="text-xl font-bold mb-4">Active Agents</h2>
+      <h2 className="text-xl font-bold mb-4 text-slate-100">Active Agents</h2>
       <div className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="table-shell">
           <thead>
-            <tr className="border-b border-slate-700">
+            <tr>
               <th className="text-left py-3 px-4 text-slate-400">Agent</th>
               <th className="text-left py-3 px-4 text-slate-400">Model</th>
               <th className="text-left py-3 px-4 text-slate-400">Status</th>
@@ -37,7 +37,7 @@ export default function AgentTable({ agents }: AgentTableProps) {
           </thead>
           <tbody>
             {agents.map((agent) => (
-              <tr key={agent.id} className="border-b border-slate-700 hover:bg-slate-700/30">
+              <tr key={agent.id} className="hover:bg-slate-700/30">
                 <td className="py-3 px-4 font-medium">{agent.name}</td>
                 <td className="py-3 px-4 text-slate-300 text-xs">{agent.model}</td>
                 <td className="py-3 px-4">
