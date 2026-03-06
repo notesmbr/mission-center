@@ -3,7 +3,11 @@ import type { AppProps } from 'next/app'
 import { useState, useEffect } from 'react'
 import { THEME_STORAGE_KEY, type ResolvedTheme, type ThemePreference, isThemePreference, resolveTheme } from '../lib/theme'
 
-const CORRECT_PIN = '236811'
+// Optional local gate.
+// NOTE: this is not "security" (the PIN is client-visible); it just prevents accidental access.
+// Configure with NEXT_PUBLIC_MISSION_CENTER_PIN. If unset/empty, no PIN gate is shown.
+const DASHBOARD_PIN = String(process.env.NEXT_PUBLIC_MISSION_CENTER_PIN || '').trim()
+
 const AUTH_KEY = 'mc_authenticated'
 const AUTH_TS_KEY = 'mc_auth_ts'
 const AUTH_EXPIRY_MS = 24 * 60 * 60 * 1000 // 24 hours
@@ -15,7 +19,7 @@ function PinGate({ onAuth }: { onAuth: () => void }) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (pin === CORRECT_PIN) {
+    if (pin === DASHBOARD_PIN) {
       localStorage.setItem(AUTH_KEY, 'true')
       localStorage.setItem(AUTH_TS_KEY, Date.now().toString())
       onAuth()
@@ -124,6 +128,12 @@ export default function App({ Component, pageProps }: AppProps) {
   }, [themePreference])
 
   useEffect(() => {
+    // If no PIN is configured, skip the gate entirely.
+    if (!DASHBOARD_PIN) {
+      setAuthenticated(true)
+      return
+    }
+
     const isAuth = localStorage.getItem(AUTH_KEY) === 'true'
     const authTs = parseInt(localStorage.getItem(AUTH_TS_KEY) || '0', 10)
     const expired = Date.now() - authTs > AUTH_EXPIRY_MS
@@ -159,6 +169,7 @@ export default function App({ Component, pageProps }: AppProps) {
       resolvedTheme={resolvedTheme}
       onThemeChange={setThemePreference}
       signOut={() => {
+        if (!DASHBOARD_PIN) return
         localStorage.removeItem(AUTH_KEY)
         localStorage.removeItem(AUTH_TS_KEY)
         setAuthenticated(false)
