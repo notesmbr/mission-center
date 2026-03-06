@@ -40,6 +40,33 @@ test('sanitizeTask returns only public fields and normalized status', () => {
   assert.equal(safeTask.note?.includes('sk-1234567890abcdef'), false)
 })
 
+test('sanitizeTask includes pr/checks and derives notification backfill status', () => {
+  const safeTask = sanitizeTask({
+    id: 'task-ci-green',
+    kind: 'code',
+    status: 'done',
+    notifyOnComplete: true,
+    pr: {
+      number: 12,
+      url: 'https://github.com/example/repo/pull/12',
+      state: 'OPEN',
+    },
+    checks: {
+      prCreated: true,
+      ciPassed: true,
+      codexReviewPassed: false,
+    },
+    notes: ['retry: reset attempts', 'OPENAI_API_KEY=sk-secret-abcdefg'],
+  } as any)
+
+  assert.equal(safeTask.pr?.number, 12)
+  assert.equal(safeTask.checks?.ciPassed, true)
+  assert.equal(safeTask.notification?.kind, 'readyForReview')
+  assert.equal(safeTask.notification?.sent, false)
+  assert.equal(safeTask.notification?.backfillPending, true)
+  assert.equal((safeTask.notes || []).some((line) => line.includes('sk-secret-abcdefg')), false)
+})
+
 test('resolveTaskSessionLogPath only returns whitelisted session.log paths', () => {
   const valid = resolveTaskSessionLogPath({
     id: 'abc123',

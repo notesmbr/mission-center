@@ -43,15 +43,41 @@ type SwarmTask = {
   projectId?: string
   description?: string
   agent?: string
+  kind?: string
   status: 'queued' | 'running' | 'needs_attention' | 'done' | 'failed' | 'unknown' | string
   attempts?: number
   maxAttempts?: number
   updatedAt?: number
   createdAt?: number
+  startedAt?: number
+  completedAt?: number
+  notifyOnComplete?: boolean
   branch?: string
   tmuxSession?: string
   worktree?: string
   note?: string
+  notes?: string[]
+  pr?: {
+    number?: number
+    title?: string
+    url?: string
+    state?: string
+  }
+  checks?: {
+    prCreated?: boolean
+    branchSynced?: boolean
+    ciPassed?: boolean
+    codexReviewPassed?: boolean
+    claudeReviewPassed?: boolean
+    geminiReviewPassed?: boolean
+    screenshotIncluded?: boolean
+  }
+  notification?: {
+    kind: 'readyForReview' | 'researchComplete' | 'needsAttention' | 'taskFailed'
+    sent: boolean
+    sentAt?: number
+    backfillPending: boolean
+  }
 }
 
 type SwarmStatusData =
@@ -66,8 +92,40 @@ type SwarmStatusData =
         done: number
         failed: number
       }
+      projectSummaries: Array<{
+        projectId: string
+        projectName?: string
+        enabled?: boolean
+        total: number
+        queued: number
+        running: number
+        needs_attention: number
+        done: number
+        failed: number
+        unknown: number
+      }>
       tasks: SwarmTask[]
       projects: Array<{ id: string; name?: string; enabled?: boolean }>
+      orchestrator: {
+        doneCriteria: {
+          progressOnCiGreen: boolean
+        }
+        notifications: Record<
+          'readyForReview' | 'researchComplete' | 'needsAttention' | 'taskFailed',
+          { enabled: boolean; channel: string; silent: boolean; defaultTarget?: string }
+        >
+        helperCommands: {
+          route: string
+          retry: string
+        }
+      }
+      notificationRoutes: Array<{
+        projectId: string
+        readyForReview?: string
+        researchComplete?: string
+        needsAttention?: string
+        taskFailed?: string
+      }>
       filters: {
         projectIds: string[]
         agents: string[]
@@ -83,10 +141,33 @@ type SwarmTaskDetailsData =
       available: true
       task: SwarmTask
       tmuxAttachCommand: string | null
+      helperCommands: {
+        retryTask: string
+        retryProjectFailed: string
+        retryProjectNeedsAttention: string
+        routeProjectNotifications: string
+      }
       log: { available: true; path: string; tail: string; lineCount: number } | { available: false; reason: string }
       lastUpdated: string
     }
   | { dataSource: 'clawdbot_swarm_task_details'; available: false; reason: string; lastUpdated: string }
+
+type SwarmHelpersData =
+  | {
+      dataSource: 'clawdbot_swarm_helpers'
+      available: true
+      supportedCommands: Array<'route' | 'retry'>
+      commandTemplates: {
+        route: string
+        retry: string
+      }
+      command?: 'route' | 'retry'
+      args?: string[]
+      output?: any
+      stdout?: string
+      lastUpdated: string
+    }
+  | { dataSource: 'clawdbot_swarm_helpers'; available: false; reason: string; lastUpdated: string }
 
 type CronListData =
   | { dataSource: 'openclaw_cron_list'; available: true; jobs: any[]; lastUpdated: string }
@@ -229,6 +310,14 @@ function taskStatusClass(status?: string): string {
   return 'bg-slate-800 text-slate-200 border-slate-600'
 }
 
+function notificationKindLabel(kind?: string): string {
+  if (kind === 'readyForReview') return 'readyForReview'
+  if (kind === 'researchComplete') return 'researchComplete'
+  if (kind === 'needsAttention') return 'needsAttention'
+  if (kind === 'taskFailed') return 'taskFailed'
+  return 'n/a'
+}
+
 function scheduleLabel(job: any): string {
   const sch = job?.schedule
   if (!sch) return 'n/a'
@@ -283,6 +372,11 @@ export default function Home() {
   const [selectedTaskId, setSelectedTaskId] = useState<string>('')
   const [taskDetails, setTaskDetails] = useState<SwarmTaskDetailsData | null>(null)
   const [taskDetailsLoading, setTaskDetailsLoading] = useState(false)
+  const [helperActionLoading, setHelperActionLoading] = useState(false)
+  const [helperActionResult, setHelperActionResult] = useState<string>('')
+  const [routeProjectId, setRouteProjectId] = useState<string>('mission-center')
+  const [routeTarget, setRouteTarget] = useState<string>('')
+  const [routeChannel, setRouteChannel] = useState<string>('discord')
 
   const [selectedJobId, setSelectedJobId] = useState<string>('')
   const [cronRuns, setCronRuns] = useState<CronRunsData | null>(null)
@@ -351,6 +445,7 @@ export default function Home() {
     if (!selectedTaskId) {
       setTaskDetails(null)
       setTaskDetailsLoading(false)
+      setHelperActionResult('')
       return
     }
 
@@ -402,6 +497,26 @@ export default function Home() {
     if (selectedProject === 'all') return
     if (!projectOptions.includes(selectedProject)) setSelectedProject('all')
   }, [projectOptions, selectedProject])
+
+  useEffect(() => {
+    const projectIds = projectOptions.filter((id) => id !== 'all')
+    if (selectedProject !== 'all' && projectIds.includes(selectedProject)) {
+      setRouteProjectId(selectedProject)
+      return
+    }
+    if (!projectIds.includes(routeProjectId)) {
+      setRouteProjectId(projectIds[0] || 'mission-center')
+    }
+  }, [projectOptions, selectedProject, routeProjectId])
+
+  useEffect(() => {
+    if (!swarmData || !swarmData.available) return
+    const route = swarmData.notificationRoutes.find((entry) => entry.projectId === routeProjectId)
+    const existing = route?.readyForReview || route?.researchComplete || route?.needsAttention || route?.taskFailed || ''
+    if (existing && !routeTarget) {
+      setRouteTarget(existing)
+    }
+  }, [swarmData, routeProjectId, routeTarget])
 
   const allTasks = useMemo(() => {
     if (!swarmData || !swarmData.available) return [] as SwarmTask[]
@@ -636,6 +751,38 @@ export default function Home() {
       setKillSwitchNotice('Failed to update kill switch.')
     } finally {
       setKillSwitchBusy(false)
+    }
+  }
+
+  const runSwarmHelper = async (payload: Record<string, unknown>) => {
+    setHelperActionLoading(true)
+    setHelperActionResult('')
+    try {
+      const response = await fetch('/api/swarm/helpers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = (await response.json()) as SwarmHelpersData
+      if (!data.available) {
+        setHelperActionResult(data.reason)
+        return
+      }
+      const summary =
+        typeof data.output === 'object' && data.output
+          ? JSON.stringify(data.output)
+          : data.stdout || 'Command completed.'
+      setHelperActionResult(summary)
+      await refreshAll()
+      if (selectedTaskId) {
+        const detailsResponse = await fetch(`/api/swarm/task-details?id=${encodeURIComponent(selectedTaskId)}`)
+        const detailsData = (await detailsResponse.json()) as SwarmTaskDetailsData
+        setTaskDetails(detailsData)
+      }
+    } catch {
+      setHelperActionResult('Helper command failed.')
+    } finally {
+      setHelperActionLoading(false)
     }
   }
 
@@ -1074,7 +1221,7 @@ export default function Home() {
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
           <div className="text-white text-lg font-semibold">Tasks</div>
-          <div className="text-slate-500 text-xs">Swarm tasks from .clawdbot • click a task for details</div>
+          <div className="text-slate-500 text-xs">Swarm tasks from .clawdbot/active-tasks.json • click a task for details</div>
         </div>
 
         <div className="flex items-center gap-2">
@@ -1158,6 +1305,133 @@ export default function Home() {
             <div className="text-slate-500 text-xs mt-2">
               Showing {taskSummary.total} task(s). queued {taskSummary.queued} • running {taskSummary.running} • needs_attention {taskSummary.needs_attention} • done {taskSummary.done} • failed {taskSummary.failed}
             </div>
+            <div className="text-slate-500 text-xs mt-1">
+              doneCriteria.progressOnCiGreen: {swarmData.orchestrator.doneCriteria.progressOnCiGreen ? 'true' : 'false'} (CI-green PRs can be marked done/ready-for-human-review before merge)
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="text-white font-semibold">Per-project counts</div>
+            <div className="mt-3 overflow-x-auto">
+              <table className="min-w-[760px] w-full text-xs">
+                <thead className="text-slate-500">
+                  <tr>
+                    <th className="text-left py-2 pr-3 font-medium">project</th>
+                    <th className="text-left py-2 pr-3 font-medium">queued</th>
+                    <th className="text-left py-2 pr-3 font-medium">running</th>
+                    <th className="text-left py-2 pr-3 font-medium">needs_attention</th>
+                    <th className="text-left py-2 pr-3 font-medium">done</th>
+                    <th className="text-left py-2 pr-3 font-medium">failed</th>
+                    <th className="text-left py-2 pr-3 font-medium">total</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {swarmData.projectSummaries
+                    .filter((p) => selectedProject === 'all' || p.projectId === selectedProject)
+                    .map((p) => (
+                      <tr key={p.projectId} className="border-t border-slate-800">
+                        <td className="py-2 pr-3 text-slate-200 whitespace-nowrap">{p.projectName || p.projectId}</td>
+                        <td className="py-2 pr-3 text-slate-300">{p.queued}</td>
+                        <td className="py-2 pr-3 text-slate-300">{p.running}</td>
+                        <td className="py-2 pr-3 text-slate-300">{p.needs_attention}</td>
+                        <td className="py-2 pr-3 text-slate-300">{p.done}</td>
+                        <td className="py-2 pr-3 text-slate-300">{p.failed}</td>
+                        <td className="py-2 pr-3 text-slate-100">{p.total}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div className="card">
+            <div className="text-white font-semibold">Helper commands</div>
+            <div className="text-slate-500 text-xs mt-1">Orchestrator helpers: route + retry</div>
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
+              {Object.entries(swarmData.orchestrator.notifications).map(([kind, cfg]) => (
+                <div key={kind} className="bg-slate-950/40 border border-slate-700 rounded-lg p-2 text-xs">
+                  <div className="text-slate-400">{kind}</div>
+                  <div className="text-slate-200 mt-1">
+                    {cfg.enabled ? 'enabled' : 'disabled'} • {cfg.channel}
+                    {cfg.silent ? ' • silent' : ''}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-3 grid grid-cols-1 xl:grid-cols-2 gap-3">
+              <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 space-y-3">
+                <div className="text-slate-200 text-sm font-medium">Route notifications</div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                  <select
+                    value={routeProjectId}
+                    onChange={(e) => setRouteProjectId(e.target.value)}
+                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                  >
+                    {projectOptions
+                      .filter((id) => id !== 'all')
+                      .map((id) => (
+                        <option key={id} value={id}>
+                          {id}
+                        </option>
+                      ))}
+                  </select>
+                  <input
+                    value={routeTarget}
+                    onChange={(e) => setRouteTarget(e.target.value)}
+                    placeholder="channel id"
+                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                  />
+                  <input
+                    value={routeChannel}
+                    onChange={(e) => setRouteChannel(e.target.value)}
+                    placeholder="discord"
+                    className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
+                  />
+                </div>
+                <button
+                  disabled={helperActionLoading || !routeProjectId || !routeTarget}
+                  onClick={() => runSwarmHelper({ command: 'route', projectId: routeProjectId, target: routeTarget, channel: routeChannel || 'discord' })}
+                  className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {helperActionLoading ? 'Applying…' : 'Apply Route'}
+                </button>
+                <div className="text-slate-500 text-xs break-all">{swarmData.orchestrator.helperCommands.route}</div>
+              </div>
+
+              <div className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 space-y-3">
+                <div className="text-slate-200 text-sm font-medium">Retry helpers</div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    disabled={helperActionLoading || (selectedProject === 'all' && !routeProjectId)}
+                    onClick={() =>
+                      runSwarmHelper({
+                        command: 'retry',
+                        status: 'failed',
+                        projectId: selectedProject === 'all' ? routeProjectId : selectedProject,
+                      })
+                    }
+                    className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Retry Failed (Project)
+                  </button>
+                  <button
+                    disabled={helperActionLoading || (selectedProject === 'all' && !routeProjectId)}
+                    onClick={() =>
+                      runSwarmHelper({
+                        command: 'retry',
+                        status: 'needs_attention',
+                        projectId: selectedProject === 'all' ? routeProjectId : selectedProject,
+                      })
+                    }
+                    className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    Retry Needs Attention
+                  </button>
+                </div>
+                <div className="text-slate-500 text-xs break-all">{swarmData.orchestrator.helperCommands.retry}</div>
+              </div>
+            </div>
+            {helperActionResult && <div className="text-slate-400 text-xs mt-3 break-all">{helperActionResult}</div>}
           </div>
 
           {taskViewMode === 'board' ? (
@@ -1186,17 +1460,18 @@ export default function Home() {
           ) : (
             <div className="card p-0 overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="min-w-[1200px] w-full text-xs">
+                <table className="min-w-[1300px] w-full text-xs">
                   <thead className="bg-slate-900/70">
                     <tr className="text-slate-400">
                       <th className="text-left px-3 py-2 font-medium">id</th>
                       <th className="text-left px-3 py-2 font-medium">description</th>
-                      <th className="text-left px-3 py-2 font-medium">project</th>
-                      <th className="text-left px-3 py-2 font-medium">agent</th>
+                      <th className="text-left px-3 py-2 font-medium">projectId</th>
                       <th className="text-left px-3 py-2 font-medium">status</th>
+                      <th className="text-left px-3 py-2 font-medium">agent</th>
                       <th className="text-left px-3 py-2 font-medium">attempts</th>
+                      <th className="text-left px-3 py-2 font-medium">max</th>
+                      <th className="text-left px-3 py-2 font-medium">pr url</th>
                       <th className="text-left px-3 py-2 font-medium">updated</th>
-                      <th className="text-left px-3 py-2 font-medium">tmux</th>
                       <th className="text-left px-3 py-2 font-medium">note</th>
                     </tr>
                   </thead>
@@ -1212,17 +1487,35 @@ export default function Home() {
                           {t.description || 'n/a'}
                         </td>
                         <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.projectId || 'unassigned'}</td>
-                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.agent || 'n/a'}</td>
                         <td className="px-3 py-2">
                           <span className={`inline-block px-2 py-0.5 rounded border ${taskStatusClass(t.status)}`}>{t.status || 'unknown'}</span>
                         </td>
-                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.attempts ?? 0} / {t.maxAttempts ?? '?'}</td>
-                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{msToHuman(t.updatedAt || t.createdAt)}</td>
-                        <td className="px-3 py-2 text-slate-300 max-w-[200px] truncate" title={t.tmuxSession || ''}>
-                          {t.tmuxSession || 'n/a'}
+                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.agent || 'n/a'}</td>
+                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.attempts ?? 0}</td>
+                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{t.maxAttempts ?? '?'}</td>
+                        <td className="px-3 py-2 text-slate-300 max-w-[320px] truncate" title={t.pr?.url || ''}>
+                          {t.pr?.url ? (
+                            <a
+                              href={t.pr.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              onClick={(e) => e.stopPropagation()}
+                              className="text-blue-400 hover:underline"
+                            >
+                              {t.pr.url}
+                            </a>
+                          ) : (
+                            'n/a'
+                          )}
                         </td>
+                        <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{msToHuman(t.updatedAt || t.createdAt)}</td>
                         <td className="px-3 py-2 text-slate-300 max-w-[320px] truncate" title={t.note || ''}>
-                          {t.note || 'n/a'}
+                          <div className="truncate">{t.note || 'n/a'}</div>
+                          {t.notification && (
+                            <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                              {notificationKindLabel(t.notification.kind)} • {t.notification.sent ? 'sent' : 'pending backfill'}
+                            </div>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -1270,12 +1563,21 @@ export default function Home() {
                         ['id', taskDetails.task.id],
                         ['projectId', taskDetails.task.projectId || 'n/a'],
                         ['description', taskDetails.task.description || 'n/a'],
+                        ['kind', taskDetails.task.kind || 'code'],
                         ['agent', taskDetails.task.agent || 'n/a'],
                         ['status', taskDetails.task.status || 'unknown'],
                         ['attempts', `${taskDetails.task.attempts ?? 0} / ${taskDetails.task.maxAttempts ?? '?'}`],
                         ['updatedAt', msToHuman(taskDetails.task.updatedAt || taskDetails.task.createdAt)],
+                        ['completedAt', msToHuman(taskDetails.task.completedAt)],
                         ['branch', taskDetails.task.branch || 'n/a'],
                         ['tmuxSession', taskDetails.task.tmuxSession || 'n/a'],
+                        ['prUrl', taskDetails.task.pr?.url || 'n/a'],
+                        [
+                          'notification',
+                          taskDetails.task.notification
+                            ? `${notificationKindLabel(taskDetails.task.notification.kind)} • ${taskDetails.task.notification.sent ? 'sent' : 'pending backfill'}`
+                            : 'n/a',
+                        ],
                         ['note', taskDetails.task.note || 'n/a'],
                       ] as Array<[string, string]>
                     ).map(([k, v]) => (
@@ -1286,7 +1588,21 @@ export default function Home() {
                     ))}
                   </div>
 
-                  <div className="card">
+                  {taskDetails.task.checks && (
+                    <div className="card">
+                      <div className="text-white font-semibold">Done-gate checks</div>
+                      <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs">
+                        {Object.entries(taskDetails.task.checks).map(([key, value]) => (
+                          <div key={key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-2">
+                            <div className="text-slate-500">{key}</div>
+                            <div className={value ? 'text-emerald-300' : 'text-rose-300'}>{value ? 'pass' : 'pending/fail'}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="card space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
                         <div className="text-white font-semibold">tmux attach</div>
@@ -1301,7 +1617,52 @@ export default function Home() {
                       </button>
                     </div>
                     {copiedText && <div className="text-slate-500 text-xs mt-2">Copied.</div>}
-                    <div className="text-slate-500 text-xs mt-2">(Log tail hidden — dashboard is task-first.)</div>
+                    <div className="pt-2 border-t border-slate-700">
+                      <div className="text-white font-semibold">Helper commands</div>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          disabled={helperActionLoading || !['failed', 'needs_attention'].includes(taskDetails.task.status)}
+                          onClick={() =>
+                            runSwarmHelper({
+                              command: 'retry',
+                              taskId: taskDetails.task.id,
+                              status: taskDetails.task.status === 'needs_attention' ? 'needs_attention' : 'failed',
+                            })
+                          }
+                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800 disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          {helperActionLoading ? 'Running…' : 'Retry Task'}
+                        </button>
+                        <button
+                          onClick={() => copyText(taskDetails.helperCommands.retryTask)}
+                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800"
+                        >
+                          Copy Retry Command
+                        </button>
+                        <button
+                          onClick={() => copyText(taskDetails.helperCommands.routeProjectNotifications)}
+                          className="text-xs px-3 py-2 border border-slate-600 rounded-lg text-slate-200 hover:bg-slate-800"
+                        >
+                          Copy Route Command
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <div className="text-white font-semibold">Session log (local-only, redacted)</div>
+                    {taskDetails.log.available ? (
+                      <>
+                        <div className="text-slate-500 text-xs mt-1">
+                          {taskDetails.log.path} • {taskDetails.log.lineCount} line(s)
+                        </div>
+                        <pre className="mt-3 text-xs text-slate-200 whitespace-pre-wrap max-h-[340px] overflow-y-auto bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                          {taskDetails.log.tail || '(empty)'}
+                        </pre>
+                      </>
+                    ) : (
+                      <div className="text-slate-400 text-xs mt-2">{taskDetails.log.reason}</div>
+                    )}
                   </div>
                 </>
               )}

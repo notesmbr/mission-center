@@ -43,15 +43,63 @@ export type SwarmTaskRecord = {
   projectId?: string
   description?: string
   agent?: string
+  kind?: string
   status?: string
   attempts?: number
   maxAttempts?: number
   updatedAt?: number
   createdAt?: number
+  startedAt?: number
+  completedAt?: number
+  notifyOnComplete?: boolean
   branch?: string
   tmuxSession?: string
   worktree?: string
   note?: string
+  notes?: unknown
+  pr?: unknown
+  checks?: unknown
+  notifiedReady?: boolean
+  notifiedAt?: number
+  notifiedResearch?: boolean
+  notifiedResearchAt?: number
+  notifiedNeedsAttention?: boolean
+  notifiedNeedsAttentionAt?: number
+  notifiedFailed?: boolean
+  notifiedFailedAt?: number
+}
+
+export type PublicSwarmTaskPr = {
+  number?: number
+  title?: string
+  url?: string
+  state?: string
+}
+
+export type PublicSwarmTaskChecks = {
+  prCreated?: boolean
+  branchSynced?: boolean
+  ciPassed?: boolean
+  codexReviewPassed?: boolean
+  claudeReviewPassed?: boolean
+  geminiReviewPassed?: boolean
+  screenshotIncluded?: boolean
+}
+
+export const NOTIFICATION_KINDS = ['readyForReview', 'researchComplete', 'needsAttention', 'taskFailed'] as const
+export type SwarmTaskNotificationKind = (typeof NOTIFICATION_KINDS)[number]
+
+export const ORCHESTRATOR_HELPER_COMMANDS = {
+  route: 'python3 .clawdbot/orchestrator.py route --project <project-id> --target <channel-or-thread-id> [--channel <channel>]',
+  retry:
+    'python3 .clawdbot/orchestrator.py retry --status <failed|needs_attention> [--task-id <id>] [--project <project-id>] [--limit <n>] [--reset-attempts]',
+} as const
+
+export type SwarmTaskNotificationState = {
+  kind: SwarmTaskNotificationKind
+  sent: boolean
+  sentAt?: number
+  backfillPending: boolean
 }
 
 export type PublicSwarmTask = {
@@ -59,15 +107,23 @@ export type PublicSwarmTask = {
   projectId?: string
   description?: string
   agent?: string
+  kind?: string
   status: TaskStatus
   attempts?: number
   maxAttempts?: number
   updatedAt?: number
   createdAt?: number
+  startedAt?: number
+  completedAt?: number
+  notifyOnComplete?: boolean
   branch?: string
   tmuxSession?: string
   worktree?: string
   note?: string
+  notes?: string[]
+  pr?: PublicSwarmTaskPr
+  checks?: PublicSwarmTaskChecks
+  notification?: SwarmTaskNotificationState
 }
 
 export type TaskLogTail =
@@ -89,6 +145,26 @@ export type SwarmConfigProject = {
   enabled?: boolean
 }
 
+export type SwarmDoneCriteria = {
+  progressOnCiGreen?: boolean
+}
+
+export type SwarmNotificationConfig = {
+  enabled?: boolean
+  channel?: string
+  silent?: boolean
+  targets?: Record<string, string>
+  defaultTarget?: string
+}
+
+export type SwarmNotificationsConfig = Partial<Record<SwarmTaskNotificationKind, SwarmNotificationConfig>>
+
+export type SwarmConfig = {
+  projects: SwarmConfigProject[]
+  doneCriteria?: SwarmDoneCriteria
+  notifications?: SwarmNotificationsConfig
+}
+
 export function readActiveTasks(): { tasks: SwarmTaskRecord[] } {
   if (!fs.existsSync(ACTIVE_TASKS_PATH)) return { tasks: [] }
   const raw = fs.readFileSync(ACTIVE_TASKS_PATH, 'utf-8')
@@ -96,11 +172,15 @@ export function readActiveTasks(): { tasks: SwarmTaskRecord[] } {
   return { tasks: Array.isArray(data?.tasks) ? data.tasks : [] }
 }
 
-export function readClawdbotConfig(): { projects: SwarmConfigProject[] } {
+export function readClawdbotConfig(): SwarmConfig {
   if (!fs.existsSync(CONFIG_PATH)) return { projects: [] }
   const raw = fs.readFileSync(CONFIG_PATH, 'utf-8')
   const data = JSON.parse(raw)
-  return { projects: Array.isArray(data?.projects) ? data.projects : [] }
+  return {
+    projects: Array.isArray(data?.projects) ? data.projects : [],
+    doneCriteria: typeof data?.doneCriteria === 'object' && data.doneCriteria ? data.doneCriteria : undefined,
+    notifications: typeof data?.notifications === 'object' && data.notifications ? data.notifications : undefined,
+  }
 }
 
 function asOptionalNumber(value: unknown): number | undefined {
@@ -111,6 +191,86 @@ function asOptionalString(value: unknown): string | undefined {
   if (typeof value !== 'string') return undefined
   const trimmed = value.trim()
   return trimmed ? trimmed : undefined
+}
+
+function asOptionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined
+}
+
+function asOptionalStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const out = value
+    .map((entry) => asOptionalString(entry))
+    .filter((entry): entry is string => Boolean(entry))
+    .slice(0, 40)
+  return out.length ? out : undefined
+}
+
+function sanitizePr(value: unknown): PublicSwarmTaskPr | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const pr = value as Record<string, unknown>
+  const number = asOptionalNumber(pr.number)
+  const title = asOptionalString(pr.title)
+  const url = asOptionalString(pr.url)
+  const state = asOptionalString(pr.state)
+  if (number == null && !title && !url && !state) return undefined
+  return { number, title, url, state }
+}
+
+function sanitizeChecks(value: unknown): PublicSwarmTaskChecks | undefined {
+  if (!value || typeof value !== 'object') return undefined
+  const checks = value as Record<string, unknown>
+  const out: PublicSwarmTaskChecks = {
+    prCreated: asOptionalBoolean(checks.prCreated),
+    branchSynced: asOptionalBoolean(checks.branchSynced),
+    ciPassed: asOptionalBoolean(checks.ciPassed),
+    codexReviewPassed: asOptionalBoolean(checks.codexReviewPassed),
+    claudeReviewPassed: asOptionalBoolean(checks.claudeReviewPassed),
+    geminiReviewPassed: asOptionalBoolean(checks.geminiReviewPassed),
+    screenshotIncluded: asOptionalBoolean(checks.screenshotIncluded),
+  }
+
+  if (Object.values(out).every((entry) => entry == null)) {
+    return undefined
+  }
+  return out
+}
+
+export function deriveTaskNotification(task: SwarmTaskRecord): SwarmTaskNotificationState | undefined {
+  const notifyEnabled = task.notifyOnComplete !== false
+  if (!notifyEnabled) return undefined
+
+  const status = normalizeTaskStatus(task.status)
+  const kind = asOptionalString(task.kind) || 'code'
+  const pr = sanitizePr(task.pr)
+
+  if (status === 'done') {
+    if (kind === 'research') {
+      const sent = task.notifiedResearch === true
+      const sentAt = asOptionalNumber(task.notifiedResearchAt)
+      return { kind: 'researchComplete', sent, sentAt, backfillPending: !sent }
+    }
+    if (pr) {
+      const sent = task.notifiedReady === true
+      const sentAt = asOptionalNumber(task.notifiedAt)
+      return { kind: 'readyForReview', sent, sentAt, backfillPending: !sent }
+    }
+    return undefined
+  }
+
+  if (status === 'needs_attention') {
+    const sent = task.notifiedNeedsAttention === true
+    const sentAt = asOptionalNumber(task.notifiedNeedsAttentionAt)
+    return { kind: 'needsAttention', sent, sentAt, backfillPending: !sent }
+  }
+
+  if (status === 'failed') {
+    const sent = task.notifiedFailed === true
+    const sentAt = asOptionalNumber(task.notifiedFailedAt)
+    return { kind: 'taskFailed', sent, sentAt, backfillPending: !sent }
+  }
+
+  return undefined
 }
 
 export function normalizeTaskStatus(value?: string): TaskStatus {
@@ -157,20 +317,31 @@ export function toWorkspaceRelativePath(maybeAbsolutePath: string): string {
 export function sanitizeTask(task: SwarmTaskRecord): PublicSwarmTask {
   const description = asOptionalString(task.description)
   const note = asOptionalString(task.note)
+  const pr = sanitizePr(task.pr)
+  const checks = sanitizeChecks(task.checks)
+  const notes = asOptionalStringArray(task.notes)?.map((entry) => redactSensitiveText(entry))
   return {
     id: String(task.id || ''),
     projectId: asOptionalString(task.projectId),
     description: description ? redactSensitiveText(description) : undefined,
     agent: asOptionalString(task.agent),
+    kind: asOptionalString(task.kind),
     status: normalizeTaskStatus(task.status),
     attempts: asOptionalNumber(task.attempts),
     maxAttempts: asOptionalNumber(task.maxAttempts),
     updatedAt: asOptionalNumber(task.updatedAt),
     createdAt: asOptionalNumber(task.createdAt),
+    startedAt: asOptionalNumber(task.startedAt),
+    completedAt: asOptionalNumber(task.completedAt),
+    notifyOnComplete: asOptionalBoolean(task.notifyOnComplete),
     branch: asOptionalString(task.branch),
     tmuxSession: asOptionalString(task.tmuxSession),
     worktree: task.worktree ? toWorkspaceRelativePath(task.worktree) : undefined,
     note: note ? redactSensitiveText(note) : undefined,
+    notes,
+    pr,
+    checks,
+    notification: deriveTaskNotification(task),
   }
 }
 
@@ -287,7 +458,9 @@ export default {
   CLAW_WORKTREES_DIR,
   TASK_LOG_SUFFIX,
   KNOWN_TASK_STATUSES,
+  ORCHESTRATOR_HELPER_COMMANDS,
   getSwarmHostAvailability,
+  deriveTaskNotification,
   isPathInsideOrEqual,
   isValidTaskId,
   normalizeTaskStatus,
