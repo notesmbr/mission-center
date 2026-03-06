@@ -406,7 +406,7 @@ export default function Home() {
   const [taskDetailsLoading, setTaskDetailsLoading] = useState(false)
   const [helperActionLoading, setHelperActionLoading] = useState(false)
   const [helperActionResult, setHelperActionResult] = useState<string>('')
-  const [routeProjectId, setRouteProjectId] = useState<string>('mission-center')
+  const [routeProjectId, setRouteProjectId] = useState<string>('')
   const [routeTarget, setRouteTarget] = useState<string>('')
   const [routeChannel, setRouteChannel] = useState<string>('discord')
 
@@ -525,24 +525,35 @@ export default function Home() {
     return ['all', ...Array.from(set).sort()]
   }, [swarmData])
 
+  const routeProjectOptions = useMemo(() => {
+    if (swarmData && swarmData.available) {
+      const ids = swarmData.projects
+        .map((project) => String(project?.id || '').trim())
+        .filter(Boolean)
+      if (ids.length) return Array.from(new Set(ids)).sort()
+    }
+    return projectOptions.filter((id) => id !== 'all')
+  }, [swarmData, projectOptions])
+
   useEffect(() => {
     if (selectedProject === 'all') return
     if (!projectOptions.includes(selectedProject)) setSelectedProject('all')
   }, [projectOptions, selectedProject])
 
   useEffect(() => {
-    const projectIds = projectOptions.filter((id) => id !== 'all')
+    const projectIds = routeProjectOptions
     if (selectedProject !== 'all' && projectIds.includes(selectedProject)) {
       setRouteProjectId(selectedProject)
       return
     }
     if (!projectIds.includes(routeProjectId)) {
-      setRouteProjectId(projectIds[0] || 'mission-center')
+      setRouteProjectId(projectIds[0] || '')
     }
-  }, [projectOptions, selectedProject, routeProjectId])
+  }, [routeProjectOptions, selectedProject, routeProjectId])
 
   useEffect(() => {
     if (!swarmData || !swarmData.available) return
+    if (!routeProjectId) return
     const route = swarmData.notificationRoutes.find((entry) => entry.projectId === routeProjectId)
     const existing = route?.readyForReview || route?.researchComplete || route?.needsAttention || route?.taskFailed || ''
     if (existing && !routeTarget) {
@@ -1457,13 +1468,17 @@ export default function Home() {
                     onChange={(e) => setRouteProjectId(e.target.value)}
                     className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded-lg px-2 py-2"
                   >
-                    {projectOptions
-                      .filter((id) => id !== 'all')
-                      .map((id) => (
+                    {routeProjectOptions.length === 0 ? (
+                      <option value="" disabled>
+                        No configured project
+                      </option>
+                    ) : (
+                      routeProjectOptions.map((id) => (
                         <option key={id} value={id}>
                           {id}
                         </option>
-                      ))}
+                      ))
+                    )}
                   </select>
                   <input
                     value={routeTarget}
