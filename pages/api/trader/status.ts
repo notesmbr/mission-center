@@ -1,5 +1,12 @@
 import type { NextApiRequest, NextApiResponse } from 'next'
-import type { TraderMode, TraderOpenPosition, TraderStatusSnapshot } from '../../../lib/trader'
+import type {
+  TraderAiStrategistSnapshot,
+  TraderMode,
+  TraderOpenPosition,
+  TraderRiskSnapshot,
+  TraderStrategyParamsSnapshot,
+  TraderStatusSnapshot,
+} from '../../../lib/trader'
 
 type TraderStatusResponse =
   | {
@@ -9,6 +16,10 @@ type TraderStatusResponse =
       cashUsd: number | null
       openPositions: TraderOpenPosition[]
       openOrdersCount: number
+      openOrders: Array<{ id: string | null; product: string | null; side: string | null; qtyBase: number | null; status: string | null }>
+      risk: TraderRiskSnapshot
+      strategyParams: TraderStrategyParamsSnapshot
+      aiStrategist: TraderAiStrategistSnapshot
       products: string[]
       lastRunTs: string | null
       lastError: string | null
@@ -69,6 +80,10 @@ export async function buildTraderStatusResponse(
         cashUsd: snapshot.cashUsd,
         openPositions: snapshot.openPositions,
         openOrdersCount: snapshot.openOrdersCount,
+        openOrders: snapshot.openOrders,
+        risk: snapshot.risk,
+        strategyParams: snapshot.strategyParams,
+        aiStrategist: snapshot.aiStrategist,
         products: snapshot.products,
         lastRunTs: snapshot.lastRunTs,
         lastError: snapshot.lastError,

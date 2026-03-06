@@ -25,20 +25,24 @@ test('allowlist only accepts fixed trader file paths', () => {
   assert.equal(isAllowedTraderPath('/tmp/unrelated.json'), false)
 })
 
-test('tailJsonlRowsFromFile returns latest parsed rows in chronological order', () => {
+test('tailJsonlRowsFromFile returns latest parsed rows newest-first', () => {
   const tmp = path.join(os.tmpdir(), `mission-center-trades-${Date.now()}.jsonl`)
   const lines: string[] = []
 
   for (let i = 1; i <= 40; i += 1) {
     lines.push(
       JSON.stringify({
-        ts: 1_700_000_000 + i,
+        type: 'closed_trade',
+        id: `t-${i}`,
+        open_ts: 1_700_000_000 + i - 10,
+        close_ts: 1_700_000_000 + i,
         product: i % 2 === 0 ? 'BTC-USD' : 'ETH-USD',
         side: i % 2 === 0 ? 'buy' : 'sell',
-        qty: i / 10,
-        price: 100 + i,
-        fees: 0.01 * i,
-        pnlUsd: i - 20,
+        qty_base: i / 10,
+        entry_price: 100 + i,
+        exit_price: 101 + i,
+        pnl_usd: i - 20,
+        pnl_pct: (i - 20) / 100,
         reason: `signal-${i}`,
       }),
     )
@@ -46,14 +50,14 @@ test('tailJsonlRowsFromFile returns latest parsed rows in chronological order', 
 
   // Malformed lines should be skipped without failing the endpoint.
   lines.push('not-json')
-  lines.push(JSON.stringify({ ts: 1_800_000_000, side: 'buy' }))
+  lines.push(JSON.stringify({ type: 'closed_trade', close_ts: 1_800_000_000, side: 'buy' }))
 
   fs.writeFileSync(tmp, lines.join('\n') + '\n', 'utf-8')
 
   const rows = tailJsonlRowsFromFile(tmp, 5, { initialBytes: 64, maxBytes: 16 * 1024, maxPasses: 8 })
   assert.equal(rows.length, 5)
-  assert.equal(rows[0].reason, 'signal-36')
-  assert.equal(rows[4].reason, 'signal-40')
+  assert.equal(rows[0].reason, 'signal-40')
+  assert.equal(rows[4].reason, 'signal-36')
   assert.equal(rows[0].product, 'BTC-USD')
   assert.equal(rows[1].product, 'ETH-USD')
 
@@ -69,18 +73,23 @@ test('normalizeTradesLimit enforces default and max bounds', () => {
 
 test('parseTradeRow redacts reason text and normalizes fields', () => {
   const row = parseTradeRow({
-    ts: 1_700_000_000,
+    type: 'closed_trade',
+    id: 't-1',
+    open_ts: 1_700_000_000,
+    close_ts: 1_700_000_100,
     product: 'BTC-USD',
     side: 'BUY',
-    qty: '0.2',
-    price: '100.12',
-    fee: 0.5,
+    qty_base: '0.2',
+    entry_price: '100.12',
+    exit_price: '101.12',
     pnl_usd: -1.25,
+    pnl_pct: -0.0125,
     reason: 'OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz12345',
   })
 
   assert.ok(row)
   assert.equal(row?.side, 'buy')
-  assert.equal(row?.qty, 0.2)
+  assert.equal(row?.qtyBase, 0.2)
+  assert.equal(row?.pnlPct, -0.0125)
   assert.equal(row?.reason?.includes('sk-abcdefghijklmnopqrstuvwxyz12345'), false)
 })

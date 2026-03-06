@@ -43,23 +43,28 @@ Fields used by Mission Center:
 
 - `mode` (`paper` or `live`)
 - `portfolio.equity_usd` and `portfolio.cash_usd`
-- `portfolio.positions` and/or `open_positions`
-- `open_orders` and/or `openOrdersCount`
+- `portfolio.positions` + `portfolio.open_meta` (for entry/mark/unrealized)
+- `open_orders` (count + a small allowlisted summary)
+- `risk` (cooldown/drawdown flags and day pnl)
+- `strategy_params` (current strategy parameters)
+- `ai_strategist` (enabled/provider/model + last run info)
 - `products` and `prices`
 - `ts` (fallback to file modified time if missing)
 
 ## trades.jsonl schema
 
-`trades.jsonl` is JSONL (one JSON object per line). Mission Center reads the newest lines from the end of file and extracts:
+`trades.jsonl` is JSONL (one JSON object per line). Mission Center reads the newest lines from the end of file and extracts **closed trades**:
 
-- `ts` (or `timestamp` / `time`)
-- `product` (or `symbol`)
-- `side`
-- `qty`
-- `price`
-- `fees`
-- `pnlUsd`
+- `type` must be `"closed_trade"` (if present)
+- `id`
+- `product`
+- `qty_base`
+- `entry_price`, `exit_price`
+- `pnl_usd`, `pnl_pct`
+- `open_ts`, `close_ts`
 - `reason` (best-effort)
+
+Rows are returned **newest-first**.
 
 Malformed lines are skipped.
 

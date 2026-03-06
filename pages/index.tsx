@@ -185,6 +185,30 @@ type TraderOpenPosition = {
   unrealizedPnlUsd?: number
 }
 
+type TraderRiskSnapshot = {
+  drawdownHalt?: boolean
+  cooldownActive?: boolean
+  drawdownPct?: number
+  maxDrawdownSeenPct?: number
+  lossStreak?: number
+  dayId?: string
+  dayRealizedPnlUsd?: number
+  dayStartEquityUsd?: number
+  updatedTs?: string | null
+}
+
+type TraderStrategyParamsSnapshot = Record<string, string | number | boolean | null>
+
+type TraderAiStrategistSnapshot = {
+  enabled: boolean
+  provider: string | null
+  model: string | null
+  state: {
+    lastRunTs: string | null
+    lastChange: string | null
+  }
+}
+
 type TraderStatusData =
   | {
       available: true
@@ -193,6 +217,10 @@ type TraderStatusData =
       cashUsd: number | null
       openPositions: TraderOpenPosition[]
       openOrdersCount: number
+      openOrders: Array<{ id: string | null; product: string | null; side: string | null; qtyBase: number | null; status: string | null }>
+      risk: TraderRiskSnapshot
+      strategyParams: TraderStrategyParamsSnapshot
+      aiStrategist: TraderAiStrategistSnapshot
       products: string[]
       lastRunTs: string | null
       lastError: string | null
@@ -206,13 +234,17 @@ type TraderStatusData =
     }
 
 type TraderTradeRow = {
-  ts: string | null
+  id: string | null
+  type: 'closed_trade'
   product: string
   side: string | null
-  qty: number | null
-  price: number | null
-  fees: number | null
+  qtyBase: number | null
+  entryPrice: number | null
+  exitPrice: number | null
   pnlUsd: number | null
+  pnlPct: number | null
+  openTs: string | null
+  closeTs: string | null
   reason: string | null
 }
 
@@ -360,7 +392,7 @@ export default function Home() {
   const [projectsData, setProjectsData] = useState<ProjectsSummaryData | null>(null)
   const [traderStatus, setTraderStatus] = useState<TraderStatusData | null>(null)
   const [traderTrades, setTraderTrades] = useState<TraderTradesData | null>(null)
-  const [traderTradesLimit, setTraderTradesLimit] = useState<number>(50)
+  const [traderTradesLimit, setTraderTradesLimit] = useState<number>(200)
 
   const [loading, setLoading] = useState(true)
 
@@ -398,7 +430,7 @@ export default function Home() {
         safeFetchJson('/api/swarm/status'),
         safeFetchJson('/api/cron/list'),
         safeFetchJson('/api/projects/summary'),
-        safeFetchJson('/api/trader/status'),
+        safeFetchJson('/api/trader/state'),
         safeFetchJson(`/api/trader/trades?limit=${encodeURIComponent(String(traderTradesLimit))}`),
       ])
 
@@ -626,6 +658,7 @@ export default function Home() {
       return {
         winRate: null as number | null,
         totalPnl: null as number | null,
+        avgPnl: null as number | null,
         maxDrawdown: null as number | null,
         tradesPerDay: null as number | null,
       }
@@ -643,7 +676,7 @@ export default function Home() {
       }
     }
 
-    const rowsSorted = [...traderTrades.rows].sort((a, b) => Date.parse(a.ts || '') - Date.parse(b.ts || ''))
+    const rowsSorted = [...traderTrades.rows].sort((a, b) => Date.parse(a.closeTs || '') - Date.parse(b.closeTs || ''))
     let runningPnl = 0
     let peak = 0
     let maxDrawdown = 0
@@ -656,7 +689,7 @@ export default function Home() {
     }
 
     const timestamps = traderTrades.rows
-      .map((row) => Date.parse(row.ts || ''))
+      .map((row) => Date.parse(row.closeTs || ''))
       .filter((ms) => Number.isFinite(ms))
       .sort((a, b) => a - b)
     let tradesPerDay: number | null = null
@@ -670,6 +703,7 @@ export default function Home() {
     return {
       winRate: pnlSamples > 0 ? wins / pnlSamples : null,
       totalPnl,
+      avgPnl: pnlSamples > 0 ? totalPnl / pnlSamples : null,
       maxDrawdown,
       tradesPerDay,
     }
@@ -945,6 +979,52 @@ export default function Home() {
             )}
           </div>
 
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+            <div className="card">
+              <div className="text-white font-semibold">Risk</div>
+              <div className="mt-2 text-sm space-y-1">
+                <div className="flex items-center justify-between"><span className="text-slate-400">drawdown halt</span><span className={traderStatus.risk.drawdownHalt ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.drawdownHalt ? 'yes' : 'no'}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">cooldown active</span><span className={traderStatus.risk.cooldownActive ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.cooldownActive ? 'yes' : 'no'}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">drawdown</span><span className="text-slate-200">{typeof traderStatus.risk.drawdownPct === 'number' ? `${fmtNumber(traderStatus.risk.drawdownPct * 100, 2)}%` : 'n/a'}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">max drawdown seen</span><span className="text-slate-200">{typeof traderStatus.risk.maxDrawdownSeenPct === 'number' ? `${fmtNumber(traderStatus.risk.maxDrawdownSeenPct * 100, 2)}%` : 'n/a'}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">loss streak</span><span className="text-slate-200">{typeof traderStatus.risk.lossStreak === 'number' ? traderStatus.risk.lossStreak : 'n/a'}</span></div>
+                <div className="flex items-center justify-between"><span className="text-slate-400">day realized pnl</span><span className="text-slate-200">{fmtUsd(traderStatus.risk.dayRealizedPnlUsd)}</span></div>
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="text-white font-semibold">Strategy + AI strategist</div>
+              <div className="text-slate-400 text-xs mt-1">From state.json (strategy_params, ai_strategist)</div>
+
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="bg-slate-950/30 border border-slate-800 rounded-lg p-3">
+                  <div className="text-slate-400 text-xs">AI strategist</div>
+                  <div className="text-slate-200 mt-1">{traderStatus.aiStrategist.enabled ? 'enabled' : 'disabled'}</div>
+                  <div className="text-slate-500 text-xs mt-1">{traderStatus.aiStrategist.provider || 'provider?'} • {traderStatus.aiStrategist.model || 'model?'}</div>
+                  <div className="text-slate-500 text-xs mt-1">last run: {isoToHuman(traderStatus.aiStrategist.state.lastRunTs)}</div>
+                </div>
+
+                <div className="bg-slate-950/30 border border-slate-800 rounded-lg p-3">
+                  <div className="text-slate-400 text-xs">Strategy params</div>
+                  <div className="mt-2 space-y-1 text-xs">
+                    {Object.keys(traderStatus.strategyParams || {}).length === 0 ? (
+                      <div className="text-slate-500">n/a</div>
+                    ) : (
+                      Object.entries(traderStatus.strategyParams)
+                        .slice(0, 14)
+                        .map(([k, v]) => (
+                          <div key={k} className="flex items-center justify-between gap-3">
+                            <span className="text-slate-500 truncate">{k}</span>
+                            <span className="text-slate-200">{String(v)}</span>
+                          </div>
+                        ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <div className="card p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-800">
               <div className="text-white font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
@@ -993,6 +1073,12 @@ export default function Home() {
               </div>
             </div>
             <div className="card">
+              <div className="text-slate-400 text-xs">Avg PnL (recent)</div>
+              <div className={`text-2xl font-bold mt-2 ${typeof traderStats.avgPnl === 'number' && traderStats.avgPnl < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                {fmtUsd(traderStats.avgPnl)}
+              </div>
+            </div>
+            <div className="card">
               <div className="text-slate-400 text-xs">Max drawdown (recent)</div>
               <div className="text-2xl font-bold mt-2 text-rose-200">{fmtUsd(traderStats.maxDrawdown)}</div>
             </div>
@@ -1022,7 +1108,7 @@ export default function Home() {
               Rows
               <select
                 value={traderTradesLimit}
-                onChange={(e) => setTraderTradesLimit(Number(e.target.value) || 50)}
+                onChange={(e) => setTraderTradesLimit(Number(e.target.value) || 200)}
                 className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1"
               >
                 {TRADER_TRADE_LIMIT_OPTIONS.map((n) => (
@@ -1040,29 +1126,33 @@ export default function Home() {
               <table className="min-w-[980px] w-full text-xs">
                 <thead className="bg-slate-900/70">
                   <tr className="text-slate-400">
-                    <th className="text-left px-3 py-2 font-medium">ts</th>
+                    <th className="text-left px-3 py-2 font-medium">close</th>
                     <th className="text-left px-3 py-2 font-medium">product</th>
                     <th className="text-left px-3 py-2 font-medium">side</th>
-                    <th className="text-left px-3 py-2 font-medium">qty</th>
-                    <th className="text-left px-3 py-2 font-medium">price</th>
-                    <th className="text-left px-3 py-2 font-medium">fees</th>
-                    <th className="text-left px-3 py-2 font-medium">pnl</th>
+                    <th className="text-left px-3 py-2 font-medium">qty (base)</th>
+                    <th className="text-left px-3 py-2 font-medium">entry</th>
+                    <th className="text-left px-3 py-2 font-medium">exit</th>
+                    <th className="text-left px-3 py-2 font-medium">pnl $</th>
+                    <th className="text-left px-3 py-2 font-medium">pnl %</th>
                     <th className="text-left px-3 py-2 font-medium">reason</th>
                   </tr>
                 </thead>
                 <tbody>
                   {traderRows.map((row, idx) => (
-                    <tr key={`${row.ts || 'na'}-${row.product}-${idx}`} className="border-t border-slate-800">
-                      <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{isoToHuman(row.ts)}</td>
+                    <tr key={`${row.closeTs || 'na'}-${row.product}-${row.id || idx}`} className="border-t border-slate-800">
+                      <td className="px-3 py-2 text-slate-300 whitespace-nowrap">{isoToHuman(row.closeTs)}</td>
                       <td className="px-3 py-2 text-slate-100">{row.product}</td>
                       <td className="px-3 py-2 text-slate-300">{row.side || 'n/a'}</td>
-                      <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qty)}</td>
-                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.price)}</td>
-                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.fees)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qtyBase)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.entryPrice)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.exitPrice)}</td>
                       <td className={`px-3 py-2 ${typeof row.pnlUsd === 'number' && row.pnlUsd < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
                         {fmtUsd(row.pnlUsd)}
                       </td>
-                      <td className="px-3 py-2 text-slate-300 max-w-[320px] truncate" title={row.reason || ''}>
+                      <td className={`px-3 py-2 ${typeof row.pnlPct === 'number' && row.pnlPct < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
+                        {typeof row.pnlPct === 'number' ? `${fmtNumber(row.pnlPct * 100, 2)}%` : 'n/a'}
+                      </td>
+                      <td className="px-3 py-2 text-slate-300 max-w-[360px] truncate" title={row.reason || ''}>
                         {row.reason || 'n/a'}
                       </td>
                     </tr>

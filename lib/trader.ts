@@ -26,14 +26,44 @@ export type TraderOpenPosition = {
   unrealizedPnlUsd?: number
 }
 
+export type TraderRiskSnapshot = {
+  drawdownHalt?: boolean
+  cooldownActive?: boolean
+  drawdownPct?: number
+  maxDrawdownSeenPct?: number
+  lossStreak?: number
+  dayId?: string
+  dayRealizedPnlUsd?: number
+  dayStartEquityUsd?: number
+  updatedTs?: string | null
+}
+
+export type TraderStrategyParamsSnapshot = {
+  [key: string]: string | number | boolean | null
+}
+
+export type TraderAiStrategistSnapshot = {
+  enabled: boolean
+  provider: string | null
+  model: string | null
+  state: {
+    lastRunTs: string | null
+    lastChange: string | null
+  }
+}
+
 export type TraderTradeRow = {
-  ts: string | null
+  id: string | null
+  type: 'closed_trade'
   product: string
   side: string | null
-  qty: number | null
-  price: number | null
-  fees: number | null
+  qtyBase: number | null
+  entryPrice: number | null
+  exitPrice: number | null
   pnlUsd: number | null
+  pnlPct: number | null
+  openTs: string | null
+  closeTs: string | null
   reason: string | null
 }
 
@@ -43,6 +73,10 @@ export type TraderStatusSnapshot = {
   cashUsd: number | null
   openPositions: TraderOpenPosition[]
   openOrdersCount: number
+  openOrders: Array<{ id: string | null; product: string | null; side: string | null; qtyBase: number | null; status: string | null }>
+  risk: TraderRiskSnapshot
+  strategyParams: TraderStrategyParamsSnapshot
+  aiStrategist: TraderAiStrategistSnapshot
   products: string[]
   lastRunTs: string | null
   lastError: string | null
@@ -269,7 +303,15 @@ function extractLastErrorFromText(text: string): string | null {
 }
 
 function parseTradeTimestamp(raw: any): string | null {
-  return toIsoTimestamp(raw?.ts ?? raw?.timestamp ?? raw?.time ?? raw?.filled_at ?? raw?.filledAt)
+  return toIsoTimestamp(
+    raw?.close_ts ??
+      raw?.closeTs ??
+      raw?.ts ??
+      raw?.timestamp ??
+      raw?.time ??
+      raw?.filled_at ??
+      raw?.filledAt,
+  )
 }
 
 function normalizeTradeSide(raw: any): string | null {
@@ -334,12 +376,22 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
   const mode = toSafeMode(state?.mode ?? state?.tradingMode ?? state?.portfolio?.mode)
   const equityUsd = pickFirstNumber(state?.equityUsd, state?.equity_usd, state?.portfolio?.equityUsd, state?.portfolio?.equity_usd)
   const cashUsd = pickFirstNumber(state?.cashUsd, state?.cash_usd, state?.portfolio?.cashUsd, state?.portfolio?.cash_usd)
-  const openOrdersCount = Math.max(
-    0,
-    Math.floor(
-      pickFirstNumber(state?.openOrdersCount, state?.open_orders_count, state?.openOrders?.length, state?.open_orders?.length, 0) || 0,
-    ),
-  )
+
+  const rawOpenOrders = Array.isArray(state?.open_orders)
+    ? state.open_orders
+    : Array.isArray(state?.openOrders)
+      ? state.openOrders
+      : []
+
+  const openOrdersCount = Math.max(0, Math.floor(pickFirstNumber(state?.openOrdersCount, state?.open_orders_count, rawOpenOrders.length, 0) || 0))
+
+  const openOrders = rawOpenOrders.slice(0, 40).map((o: any) => ({
+    id: pickFirstString(o?.id, o?.order_id),
+    product: sanitizeProduct(o?.product),
+    side: normalizeTradeSide(o),
+    qtyBase: pickFirstNumber(o?.qty_base, o?.qty, o?.quantity, o?.size),
+    status: pickFirstString(o?.status, o?.state),
+  }))
 
   const products = Array.isArray(state?.products)
     ? state.products.map((p: unknown) => sanitizeProduct(p)).filter((p: string | null): p is string => Boolean(p))
@@ -353,6 +405,39 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
       const safe = sanitizeProduct(key)
       if (safe) inferredProducts.add(safe)
     }
+  }
+
+  const risk = state?.risk && typeof state.risk === 'object' ? state.risk : {}
+  const riskSnapshot: TraderRiskSnapshot = {
+    drawdownHalt: Boolean(risk?.drawdown_halt),
+    cooldownActive: Boolean(risk?.cooldown_active),
+    drawdownPct: asFiniteNumber(risk?.drawdown_pct) ?? undefined,
+    maxDrawdownSeenPct: asFiniteNumber(risk?.max_drawdown_seen_pct) ?? undefined,
+    lossStreak: asFiniteNumber(risk?.loss_streak) ?? undefined,
+    dayId: pickFirstString(risk?.day_id) || undefined,
+    dayRealizedPnlUsd: asFiniteNumber(risk?.day_realized_pnl_usd) ?? undefined,
+    dayStartEquityUsd: asFiniteNumber(risk?.day_start_equity_usd) ?? undefined,
+    updatedTs: toIsoTimestamp(risk?.updated_ts),
+  }
+
+  const strategyParamsRaw = state?.strategy_params && typeof state.strategy_params === 'object' ? state.strategy_params : {}
+  const strategyParams: TraderStrategyParamsSnapshot = {}
+  for (const [k, v] of Object.entries(strategyParamsRaw)) {
+    if (typeof v === 'string' || typeof v === 'number' || typeof v === 'boolean' || v === null) {
+      strategyParams[String(k)] = v as any
+    }
+  }
+
+  const ai = state?.ai_strategist && typeof state.ai_strategist === 'object' ? state.ai_strategist : {}
+  const aiState = ai?.state && typeof ai.state === 'object' ? ai.state : {}
+  const aiStrategist: TraderAiStrategistSnapshot = {
+    enabled: Boolean(ai?.enabled),
+    provider: pickFirstString(ai?.provider),
+    model: pickFirstString(ai?.model),
+    state: {
+      lastRunTs: toIsoTimestamp(aiState?.last_run_ts ?? aiState?.lastRunTs),
+      lastChange: toIsoTimestamp(aiState?.last_change ?? aiState?.lastChange),
+    },
   }
 
   let lastError: string | null = null
@@ -370,8 +455,14 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
     cashUsd,
     openPositions,
     openOrdersCount,
+    openOrders,
+    risk: riskSnapshot,
+    strategyParams,
+    aiStrategist,
     products: Array.from(inferredProducts).sort(),
-    lastRunTs: toIsoTimestamp(state?.ts ?? state?.timestamp ?? state?.lastRunTs ?? state?.last_run_ts ?? state?.updatedAt) || new Date(stateStat.mtimeMs).toISOString(),
+    lastRunTs:
+      toIsoTimestamp(state?.ts ?? state?.timestamp ?? state?.lastRunTs ?? state?.last_run_ts ?? state?.updatedAt) ||
+      new Date(stateStat.mtimeMs).toISOString(),
     lastError,
     killSwitchEnabled: fs.existsSync(killSwitchPath),
   }
@@ -380,19 +471,28 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
 export function parseTradeRow(raw: any): TraderTradeRow | null {
   if (!raw || typeof raw !== 'object') return null
 
+  // Contract: trades.jsonl contains type="closed_trade" entries.
+  // If type is present and not closed_trade, ignore the line.
+  const rawType = asTrimmedString((raw as any)?.type)
+  if (rawType && rawType.toLowerCase() !== 'closed_trade') return null
+
   const product = sanitizeProduct(raw?.product ?? raw?.symbol ?? raw?.instrument ?? raw?.market)
   if (!product) return null
 
   const reason = pickFirstString(raw?.reason, raw?.note, raw?.signal, raw?.strategyReason, raw?.meta?.reason)
 
   return {
-    ts: parseTradeTimestamp(raw),
+    id: pickFirstString(raw?.id, raw?.trade_id, raw?.tradeId),
+    type: 'closed_trade',
     product,
     side: normalizeTradeSide(raw),
-    qty: pickFirstNumber(raw?.qty, raw?.quantity, raw?.size, raw?.amount),
-    price: pickFirstNumber(raw?.price, raw?.fillPrice, raw?.fill_price, raw?.avgFillPrice),
-    fees: pickFirstNumber(raw?.fees, raw?.fee, raw?.feesUsd, raw?.fees_usd),
-    pnlUsd: pickFirstNumber(raw?.pnlUsd, raw?.pnl_usd, raw?.realizedPnlUsd, raw?.realized_pnl_usd, raw?.pnl),
+    qtyBase: pickFirstNumber(raw?.qty_base, raw?.qty, raw?.quantity, raw?.size, raw?.amount),
+    entryPrice: pickFirstNumber(raw?.entry_price, raw?.entryPrice),
+    exitPrice: pickFirstNumber(raw?.exit_price, raw?.exitPrice),
+    pnlUsd: pickFirstNumber(raw?.pnl_usd, raw?.pnlUsd, raw?.realized_pnl_usd, raw?.realizedPnlUsd, raw?.pnl),
+    pnlPct: pickFirstNumber(raw?.pnl_pct, raw?.pnlPct),
+    openTs: toIsoTimestamp(raw?.open_ts ?? raw?.openTs),
+    closeTs: toIsoTimestamp(raw?.close_ts ?? raw?.closeTs) || parseTradeTimestamp(raw),
     reason: reason ? redactSensitiveText(reason) : null,
   }
 }
@@ -468,7 +568,7 @@ export function tailJsonlRowsFromFile(filePath: string, limit: number, options?:
     }
   }
 
-  rows.reverse()
+  // We push from newest -> oldest, so keep it that way.
   return rows
 }
 
