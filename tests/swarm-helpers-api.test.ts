@@ -20,10 +20,12 @@ test('buildSwarmHelpersResponse supports GET metadata', async () => {
   assert.equal(result.statusCode, 200)
   assert.equal(result.body.available, true)
   if (result.body.available) {
+    assert.equal(result.body.dataSource, 'clawdbot_swarm_helpers')
     assert.deepEqual(result.body.supportedCommands, ['route', 'retry'])
     assert.equal(result.body.commandTemplates.route.includes('--channel <channel>'), true)
     assert.equal(result.body.commandTemplates.retry.includes('[--limit <n>]'), true)
     assert.equal(result.body.commandTemplates.retry.includes('[--reset-attempts]'), true)
+    assert.equal(typeof result.body.lastUpdated, 'string')
   }
 })
 
@@ -102,4 +104,19 @@ test('buildSwarmHelpersResponse allows non-discord route targets', async () => {
   assert.equal(result.statusCode, 200)
   assert.equal(result.body.available, true)
   assert.deepEqual(capturedArgs, ['route', '--project', 'mission-center', '--target', 'ops-alerts-thread', '--channel', 'slack'])
+})
+
+test('buildSwarmHelpersResponse returns host unavailable reason when swarm files are missing', async () => {
+  const deps = makeDeps()
+  deps.getSwarmHostAvailability = () => ({
+    available: false,
+    reason: 'Swarm status is only available when Mission Center runs on the OpenClaw host. Missing .clawdbot/config.json.',
+  })
+
+  const result = await buildSwarmHelpersResponse({ method: 'GET', body: {} } as any, deps)
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.available, false)
+  if (!result.body.available) {
+    assert.equal(result.body.reason.includes('OpenClaw host'), true)
+  }
 })

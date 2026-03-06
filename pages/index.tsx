@@ -728,6 +728,23 @@ export default function Home() {
     return jobs.filter((j: any) => re.test(String(j?.name || '')))
   }, [cronData, selectedProject])
 
+  useEffect(() => {
+    if (!selectedJobId) {
+      setCronRuns(null)
+      return
+    }
+    const stillVisible = filteredJobs.some((job: any) => String(job?.id || '') === selectedJobId)
+    if (!stillVisible) {
+      setSelectedJobId('')
+      setCronRuns(null)
+    }
+  }, [filteredJobs, selectedJobId])
+
+  const visibleProjects = useMemo(() => {
+    if (!projectsData || !projectsData.available) return [] as ProjectSummary[]
+    return projectsData.projects.filter((project) => selectedProject === 'all' || project.id === selectedProject)
+  }, [projectsData, selectedProject])
+
   const jobBuckets = useMemo(() => {
     const needs: any[] = []
     const completed: any[] = []
@@ -1204,11 +1221,14 @@ export default function Home() {
           <div className="text-white font-semibold">No projects configured</div>
           <div className="text-slate-400 text-sm mt-1">Add projects in .clawdbot/config.json.</div>
         </div>
+      ) : visibleProjects.length === 0 ? (
+        <div className="card">
+          <div className="text-white font-semibold">No project summary for this filter</div>
+          <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
+        </div>
       ) : (
         <div className="space-y-4">
-          {projectsData.projects
-            .filter((p) => selectedProject === 'all' || p.id === selectedProject)
-            .map((p) => {
+          {visibleProjects.map((p) => {
               const tasks = (p.tasks || []) as any[]
               const needs = tasks.filter((t) => t.status === 'needs_attention' || t.status === 'failed')
               const running = tasks.filter((t) => t.status === 'running')
@@ -1803,6 +1823,11 @@ export default function Home() {
           <div className="text-white font-semibold">No cron jobs configured</div>
           <div className="text-slate-400 text-sm mt-1">You can add jobs via OpenClaw cron. This panel will populate automatically.</div>
         </div>
+      ) : filteredJobs.length === 0 ? (
+        <div className="card">
+          <div className="text-white font-semibold">No jobs match this project filter</div>
+          <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
+        </div>
       ) : (
         <>
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
@@ -1908,35 +1933,42 @@ export default function Home() {
         </div>
       ) : (
         <div className="space-y-3">
-          {groupedAgentSessions.map((g) => (
-            <div key={g.agentId} className="card">
-              <div className="flex items-center justify-between">
-                <div className="text-white font-semibold">{g.agentId}</div>
-                <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
-              </div>
-
-              <div className="mt-3 space-y-2">
-                {g.sessions.slice(0, 12).map((s) => (
-                  <div key={s.key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
-                    <div className="min-w-0">
-                      <div className="text-slate-100 truncate">
-                        {s.kind} • {s.model || 'model?'}
-                      </div>
-                      <div className="text-slate-500 text-xs truncate">updated {new Date(s.updatedAt).toLocaleString()}</div>
-                      <div className="text-slate-500 text-xs truncate">key: {s.key}</div>
-                    </div>
-
-                    <button
-                      onClick={() => copyText(s.key)}
-                      className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
-                    >
-                      Copy key
-                    </button>
-                  </div>
-                ))}
-              </div>
+          {groupedAgentSessions.length === 0 ? (
+            <div className="card">
+              <div className="text-white font-semibold">No recent sessions</div>
+              <div className="text-slate-400 text-sm mt-1">OpenClaw returned zero recent sessions.</div>
             </div>
-          ))}
+          ) : (
+            groupedAgentSessions.map((g) => (
+              <div key={g.agentId} className="card">
+                <div className="flex items-center justify-between">
+                  <div className="text-white font-semibold">{g.agentId}</div>
+                  <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
+                </div>
+
+                <div className="mt-3 space-y-2">
+                  {g.sessions.slice(0, 12).map((s) => (
+                    <div key={s.key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-slate-100 truncate">
+                          {s.kind} • {s.model || 'model?'}
+                        </div>
+                        <div className="text-slate-500 text-xs truncate">updated {new Date(s.updatedAt).toLocaleString()}</div>
+                        <div className="text-slate-500 text-xs truncate">key: {s.key}</div>
+                      </div>
+
+                      <button
+                        onClick={() => copyText(s.key)}
+                        className="text-xs px-2 py-1 border border-slate-600 rounded text-slate-200 hover:bg-slate-800"
+                      >
+                        Copy key
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))
+          )}
 
           {copiedText && <div className="text-slate-500 text-xs">Copied.</div>}
         </div>
