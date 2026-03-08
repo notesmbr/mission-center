@@ -102,6 +102,14 @@ function normalizeLivePrState(state: unknown, mergedAt: unknown): LivePrState | 
   return undefined
 }
 
+function parseTimestampMs(value: unknown): number | undefined {
+  const text = asNonEmptyString(value)
+  if (!text) return undefined
+  const timestamp = Date.parse(text)
+  if (!Number.isFinite(timestamp) || timestamp <= 0) return undefined
+  return timestamp
+}
+
 function parseRepoSlug(value: string): string | null {
   const trimmed = String(value || '').trim()
   if (!trimmed) return null
@@ -218,7 +226,7 @@ export function reconcileTaskWithLivePr(task: ReconcileableTask, snapshot: LiveP
       changed = true
     }
     if (typeof nextTask.completedAt !== 'number') {
-      nextTask.completedAt = nowMs
+      nextTask.completedAt = parseTimestampMs(snapshot.mergedAt) ?? nowMs
       changed = true
     }
   } else if (snapshot.state === 'CLOSED') {

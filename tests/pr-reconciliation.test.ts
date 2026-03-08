@@ -34,6 +34,28 @@ test('reconcileTaskWithLivePr marks merged PRs done and replaces stale ready not
   assert.equal(out.completedAt, nowMs)
 })
 
+test('reconcileTaskWithLivePr uses mergedAt timestamp for completedAt when available', () => {
+  const task = {
+    id: 'task-merged-at',
+    status: 'done',
+    note: 'All done-gate checks passed. Ready to merge.',
+    pr: {
+      number: 42,
+      state: 'OPEN',
+      url: 'https://example.test/pr/42',
+    },
+  }
+  const snapshot = {
+    number: 42,
+    state: 'MERGED',
+    url: 'https://example.test/pr/42',
+    mergedAt: '2025-03-01T12:30:00.000Z',
+  }
+
+  const out = reconcileTaskWithLivePr(task, snapshot, 1_700_000_123_000)
+  assert.equal(out.completedAt, Date.parse('2025-03-01T12:30:00.000Z'))
+})
+
 test('reconcileTaskWithLivePr replaces stale ready note when PR is closed', () => {
   const nowMs = 1_700_000_123_000
   const task = {

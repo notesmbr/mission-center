@@ -218,6 +218,13 @@ test('buildSwarmTaskDetailsResponse reconciles only selected task id', async () 
     readActiveTasks: () => ({
       tasks: [
         {
+          id: 'task-0',
+          projectId: 'mission-center',
+          status: 'done',
+          note: 'All done-gate checks passed. Ready to merge.',
+          pr: { number: 6, state: 'OPEN', url: 'https://example.test/pr/6' },
+        } as any,
+        {
           id: 'task-1',
           projectId: 'mission-center',
           status: 'done',
@@ -230,13 +237,16 @@ test('buildSwarmTaskDetailsResponse reconciles only selected task id', async () 
     reconcileTasksWithLivePrState: async (tasks, options) => {
       capturedTaskIds = options?.taskIds
       capturedMaxCandidates = options?.maxCandidates
-      return [
-        {
-          ...tasks[0],
-          note: 'Merged: https://example.test/pr/7',
-          pr: { number: 7, state: 'MERGED', url: 'https://example.test/pr/7' },
-        } as any,
-      ]
+      const selected = new Set(options?.taskIds || [])
+      return tasks.map((task) =>
+        selected.has(String(task.id || ''))
+          ? ({
+              ...task,
+              note: 'Merged: https://example.test/pr/7',
+              pr: { number: 7, state: 'MERGED', url: 'https://example.test/pr/7' },
+            } as any)
+          : task,
+      )
     },
     readTaskSessionLogTail: () => ({ available: false, reason: 'no log available' }),
     isValidTaskId: (taskId) => taskId === 'task-1',
@@ -250,6 +260,7 @@ test('buildSwarmTaskDetailsResponse reconciles only selected task id', async () 
   assert.deepEqual(capturedTaskIds, ['task-1'])
   assert.equal(capturedMaxCandidates, 1)
   if (result.body.available) {
+    assert.equal(result.body.task.id, 'task-1')
     assert.equal(result.body.task.pr?.state, 'MERGED')
     assert.equal(result.body.task.note, 'Merged: https://example.test/pr/7')
   }
