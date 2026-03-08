@@ -58,16 +58,23 @@ Or use the helper script (binds to 127.0.0.1):
 - `GET /api/trader/status` - Trader status from allowlisted files
 - `GET /api/trader/trades?limit=<N>` - Recent trades from `trades.jsonl` (default 50, max 500)
 - `POST /api/trader/kill-switch` - Enable/disable kill switch (`{ "enabled": true|false }`)
-- `GET /api/skills/global` - Global skills scan (`~/.openclaw/skills`, `/opt/homebrew/lib/node_modules/openclaw/skills`, `<workspace>/skills`) with precedence + invalid-skill reporting. Response entries include absolute local filesystem paths (`roots.*`, `skills[].path`, `invalid[].path`).
+- `GET /api/skills/global` - Global skills scan (`~/.openclaw/skills`, bundled install path, `<workspace>/skills`) with precedence + invalid-skill reporting. Response entries include absolute local filesystem paths (`roots.*`, `skills[].path`, `invalid[].path`).
 
 ## Global Skills Sources
 
 - `workspace`: `<workspace>/skills` (highest precedence)
 - `shared`: `~/.openclaw/skills`
-- `bundled`: `/opt/homebrew/lib/node_modules/openclaw/skills` (lowest precedence)
+- `bundled`: resolved from `OPENCLAW_BUNDLED_SKILLS_DIR` first, otherwise auto-detected from common global install locations (lowest precedence)
 
 If the same skill name exists in multiple sources, Mission Center marks the active version using:
 `workspace > shared > bundled`.
+
+## Filesystem/Security Notes
+
+- The scanner only reads direct child directories under configured skill roots and only loads `SKILL.md` from each child.
+- Paths are discovered from local filesystem directory entries; user input is not used for path construction.
+- Missing or malformed skill folders are reported under `invalid` instead of crashing the endpoint.
+- `OPENCLAW_BUNDLED_SKILLS_DIR` can be set to pin the bundled skills root explicitly in non-default installs.
 
 ## Trader File Contracts
 

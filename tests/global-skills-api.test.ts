@@ -80,3 +80,18 @@ test('resolveBundledSkillsRoot falls back to exec-path derived location when non
   const resolved = resolveBundledSkillsRoot(undefined, () => false, '/usr/local/bin/node', 'linux')
   assert.equal(resolved, '/usr/local/lib/node_modules/openclaw/skills')
 })
+
+test('resolveBundledSkillsRoot includes windows candidates', () => {
+  const existing = new Set(['C:\\Users\\alice\\AppData\\Roaming\\npm\\node_modules\\openclaw\\skills'])
+  const resolved = resolveBundledSkillsRoot(
+    undefined,
+    (candidate) => existing.has(candidate),
+    'C:\\Program Files\\nodejs\\node.exe',
+    'win32',
+    {
+      APPDATA: 'C:\\Users\\alice\\AppData\\Roaming',
+      ProgramFiles: 'C:\\Program Files',
+    },
+  )
+  assert.equal(resolved, 'C:\\Users\\alice\\AppData\\Roaming\\npm\\node_modules\\openclaw\\skills')
+})

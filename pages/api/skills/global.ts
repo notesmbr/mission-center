@@ -41,14 +41,28 @@ function isExistingDirectory(absPath: string): boolean {
   }
 }
 
-function getBundledSkillsCandidates(nodeExecPath: string, platform: NodeJS.Platform): string[] {
-  const fromExecPath = path.resolve(path.dirname(nodeExecPath), '..', 'lib', 'node_modules', 'openclaw', 'skills')
-  const platformSpecific =
-    platform === 'darwin'
-      ? ['/opt/homebrew/lib/node_modules/openclaw/skills', '/usr/local/lib/node_modules/openclaw/skills']
-      : ['/usr/local/lib/node_modules/openclaw/skills', '/usr/lib/node_modules/openclaw/skills']
+function getBundledSkillsCandidates(
+  nodeExecPath: string,
+  platform: NodeJS.Platform,
+  env: Record<string, string | undefined> = process.env,
+): string[] {
+  const pathImpl = platform === 'win32' ? path.win32 : path.posix
+  const fromExecPath = pathImpl.resolve(pathImpl.dirname(nodeExecPath), '..', 'lib', 'node_modules', 'openclaw', 'skills')
+  const unixCandidates = [
+    '/usr/local/lib/node_modules/openclaw/skills',
+    '/usr/lib/node_modules/openclaw/skills',
+    '/opt/homebrew/lib/node_modules/openclaw/skills',
+    '/opt/local/lib/node_modules/openclaw/skills',
+  ]
+  const windowsCandidates =
+    platform === 'win32'
+      ? [
+          path.win32.join(String(env.APPDATA || ''), 'npm', 'node_modules', 'openclaw', 'skills'),
+          path.win32.join(String(env.ProgramFiles || 'C:\\Program Files'), 'nodejs', 'node_modules', 'openclaw', 'skills'),
+        ]
+      : []
 
-  return Array.from(new Set([fromExecPath, ...platformSpecific, '/opt/homebrew/lib/node_modules/openclaw/skills']))
+  return Array.from(new Set([fromExecPath, ...unixCandidates, ...windowsCandidates]))
 }
 
 export function resolveBundledSkillsRoot(
@@ -56,11 +70,12 @@ export function resolveBundledSkillsRoot(
   isDirectory: (absPath: string) => boolean = isExistingDirectory,
   nodeExecPath: string = process.execPath,
   platform: NodeJS.Platform = process.platform,
+  env: Record<string, string | undefined> = process.env,
 ): string {
   const envValue = String(envDir || '').trim()
   if (envValue) return envValue
 
-  const candidates = getBundledSkillsCandidates(nodeExecPath, platform)
+  const candidates = getBundledSkillsCandidates(nodeExecPath, platform, env)
 
   const existing = candidates.find((candidate) => isDirectory(candidate))
   return existing || candidates[0]
