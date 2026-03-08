@@ -58,7 +58,7 @@ Or use the helper script (binds to 127.0.0.1):
 - `GET /api/trader/status` - Trader status from allowlisted files
 - `GET /api/trader/trades?limit=<N>` - Recent trades from `trades.jsonl` (default 50, max 500)
 - `POST /api/trader/kill-switch` - Enable/disable kill switch (`{ "enabled": true|false }`)
-- `GET /api/skills/global` - Global skills scan (`~/.openclaw/skills`, `/opt/homebrew/lib/node_modules/openclaw/skills`, `<workspace>/skills`) with precedence + invalid-skill reporting
+- `GET /api/skills/global` - Global skills scan (`~/.openclaw/skills`, `/opt/homebrew/lib/node_modules/openclaw/skills`, `<workspace>/skills`) with precedence + invalid-skill reporting. Response entries include absolute local filesystem paths (`roots.*`, `skills[].path`, `invalid[].path`).
 
 ## Global Skills Sources
 
