@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { buildGlobalSkillsResponse, type GlobalSkillsDependencies } from '../pages/api/skills/global.ts'
+import {
+  buildGlobalSkillsResponse,
+  resolveBundledSkillsRoot,
+  type GlobalSkillsDependencies,
+} from '../pages/api/skills/global.ts'
 
 const FIXED_NOW = 1_700_000_000_000
 
@@ -59,4 +63,15 @@ test('buildGlobalSkillsResponse enforces GET and returns normalized payload', as
     assert.equal(ok.body.counts.active, 1)
     assert.equal(ok.body.lastUpdated, new Date(FIXED_NOW).toISOString())
   }
+})
+
+test('resolveBundledSkillsRoot prefers env override when set', () => {
+  const resolved = resolveBundledSkillsRoot('/custom/openclaw/skills', () => false)
+  assert.equal(resolved, '/custom/openclaw/skills')
+})
+
+test('resolveBundledSkillsRoot picks first existing fallback candidate', () => {
+  const existing = new Set(['/usr/local/lib/node_modules/openclaw/skills'])
+  const resolved = resolveBundledSkillsRoot(undefined, (candidate) => existing.has(candidate))
+  assert.equal(resolved, '/usr/local/lib/node_modules/openclaw/skills')
 })

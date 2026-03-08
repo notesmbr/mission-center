@@ -1,3 +1,4 @@
+import fs from 'fs'
 import path from 'path'
 import type { NextApiRequest, NextApiResponse } from 'next'
 
@@ -30,6 +31,32 @@ export type GlobalSkillsDependencies = {
 
 function nowIso(deps: Pick<GlobalSkillsDependencies, 'now'>): string {
   return new Date(deps.now()).toISOString()
+}
+
+function isExistingDirectory(absPath: string): boolean {
+  try {
+    return fs.statSync(absPath).isDirectory()
+  } catch {
+    return false
+  }
+}
+
+export function resolveBundledSkillsRoot(
+  envDir: string | undefined,
+  isDirectory: (absPath: string) => boolean = isExistingDirectory,
+): string {
+  const envValue = String(envDir || '').trim()
+  if (envValue) return envValue
+
+  const candidates = [
+    '/opt/homebrew/lib/node_modules/openclaw/skills',
+    '/usr/local/lib/node_modules/openclaw/skills',
+    '/usr/lib/node_modules/openclaw/skills',
+    path.resolve(process.execPath, '../../lib/node_modules/openclaw/skills'),
+  ]
+
+  const existing = candidates.find((candidate) => isDirectory(candidate))
+  return existing || candidates[0]
 }
 
 export async function buildGlobalSkillsResponse(
@@ -81,7 +108,7 @@ export async function buildGlobalSkillsResponse(
 function resolveRoots(): GlobalSkillRoots {
   return {
     shared: path.join(OPENCLAW_DIR, 'skills'),
-    bundled: process.env.OPENCLAW_BUNDLED_SKILLS_DIR || '/opt/homebrew/lib/node_modules/openclaw/skills',
+    bundled: resolveBundledSkillsRoot(process.env.OPENCLAW_BUNDLED_SKILLS_DIR),
     workspace: path.join(WORKSPACE_ROOT, 'skills'),
   }
 }
