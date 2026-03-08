@@ -72,6 +72,7 @@ export type SwarmStatusDependencies = {
   readActiveTasks: () => { tasks: SwarmTaskRecord[] }
   readClawdbotConfig: () => SwarmConfig
   sanitizeTasks: (tasks: SwarmTaskRecord[]) => PublicSwarmTask[]
+  reconcileTasksWithLivePrState: (tasks: SwarmTaskRecord[]) => Promise<SwarmTaskRecord[]>
   getSwarmHostAvailability: () => { available: true } | { available: false; reason: string }
   now: () => number
 }
@@ -151,8 +152,9 @@ export async function buildSwarmStatusResponse(
 
   try {
     const { tasks: rawTasks } = deps.readActiveTasks()
+    const reconciledTasks = await deps.reconcileTasksWithLivePrState(rawTasks || [])
     const { projects: rawProjects, doneCriteria, notifications } = deps.readClawdbotConfig()
-    const tasks = sortTasksByUpdated(deps.sanitizeTasks(rawTasks || []))
+    const tasks = sortTasksByUpdated(deps.sanitizeTasks(reconciledTasks || []))
 
     const summary = {
       total: tasks.length,
@@ -310,11 +312,17 @@ export async function buildSwarmStatusResponse(
 
 async function loadDependencies(): Promise<SwarmStatusDependencies> {
   const { readActiveTasks, readClawdbotConfig, sanitizeTasks, getSwarmHostAvailability } = await import('../../../lib/swarm')
+  const reconciliationLib = await import('../_lib/pr-reconciliation')
+  const reconcileTasksWithLivePrState =
+    (reconciliationLib as any).reconcileTasksWithLivePrState ||
+    (reconciliationLib as any)?.default?.reconcileTasksWithLivePrState ||
+    (async (tasks: SwarmTaskRecord[]) => tasks)
 
   return {
     readActiveTasks,
     readClawdbotConfig,
     sanitizeTasks,
+    reconcileTasksWithLivePrState,
     getSwarmHostAvailability,
     now: () => Date.now(),
   }

@@ -26,6 +26,10 @@ type SwarmTaskDetailsResponse =
 export type SwarmTaskDetailsDependencies = {
   readActiveTasks: () => { tasks: SwarmTaskRecord[] }
   sanitizeTask: (task: SwarmTaskRecord) => PublicSwarmTask
+  reconcileTasksWithLivePrState: (
+    tasks: SwarmTaskRecord[],
+    options?: { taskIds?: string[]; maxCandidates?: number; now?: () => number },
+  ) => Promise<SwarmTaskRecord[]>
   readTaskSessionLogTail: (task: Pick<SwarmTaskRecord, 'id' | 'worktree'>, maxLines?: number) => TaskLogTail
   isValidTaskId: (taskId: string) => boolean
   getSwarmHostAvailability: () => { available: true } | { available: false; reason: string }
@@ -100,7 +104,8 @@ export async function buildSwarmTaskDetailsResponse(
 
   try {
     const { tasks } = deps.readActiveTasks()
-    const rawTask = (tasks || []).find((task) => String(task?.id || '') === taskId)
+    const reconciledTasks = await deps.reconcileTasksWithLivePrState(tasks || [], { taskIds: [taskId], maxCandidates: 1 })
+    const rawTask = (reconciledTasks || []).find((task) => String(task?.id || '') === taskId)
     if (!rawTask) {
       return {
         statusCode: 200,
@@ -150,10 +155,16 @@ export async function buildSwarmTaskDetailsResponse(
 
 async function loadDependencies(): Promise<SwarmTaskDetailsDependencies> {
   const { readActiveTasks, sanitizeTask, readTaskSessionLogTail, isValidTaskId, getSwarmHostAvailability } = await import('../../../lib/swarm')
+  const reconciliationLib = await import('../_lib/pr-reconciliation')
+  const reconcileTasksWithLivePrState =
+    (reconciliationLib as any).reconcileTasksWithLivePrState ||
+    (reconciliationLib as any)?.default?.reconcileTasksWithLivePrState ||
+    (async (tasks: SwarmTaskRecord[]) => tasks)
 
   return {
     readActiveTasks,
     sanitizeTask,
+    reconcileTasksWithLivePrState,
     readTaskSessionLogTail,
     isValidTaskId,
     getSwarmHostAvailability,
