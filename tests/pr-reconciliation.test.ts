@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import reconciliationLib from '../pages/api/_lib/pr-reconciliation.ts'
+import reconciliationLib, { shouldConsiderTask } from '../pages/api/_lib/pr-reconciliation'
 
 const { reconcileTaskWithLivePr } = reconciliationLib as {
   reconcileTaskWithLivePr: (task: any, snapshot: any, nowMs: number) => any
@@ -58,3 +58,29 @@ test('reconcileTaskWithLivePr replaces stale ready note when PR is closed', () =
   assert.equal(out.updatedAt, nowMs)
 })
 
+test('shouldConsiderTask honors taskIds selection filter strictly', () => {
+  const selected = new Set(['task-2'])
+  assert.equal(
+    shouldConsiderTask(
+      {
+        id: 'task-1',
+        status: 'done',
+        note: 'All done-gate checks passed. Ready to merge.',
+        pr: { number: 10, state: 'OPEN' },
+      },
+      selected,
+    ),
+    false,
+  )
+  assert.equal(
+    shouldConsiderTask(
+      {
+        id: 'task-2',
+        status: 'queued',
+        pr: { number: 11, state: 'OPEN' },
+      },
+      selected,
+    ),
+    true,
+  )
+})

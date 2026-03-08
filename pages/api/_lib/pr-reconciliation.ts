@@ -243,9 +243,11 @@ type Candidate = {
   prNumber: number
 }
 
-function shouldConsiderTask(task: ReconcileableTask, selectedTaskIds?: Set<string>): boolean {
+export function shouldConsiderTask(task: ReconcileableTask, selectedTaskIds?: Set<string>): boolean {
   const taskId = asNonEmptyString(task.id)
-  if (selectedTaskIds && taskId && selectedTaskIds.has(taskId)) return true
+  if (selectedTaskIds) {
+    return Boolean(taskId && selectedTaskIds.has(taskId))
+  }
 
   const status = String(task.status || '')
     .trim()
@@ -290,22 +292,36 @@ export async function reconcileTasksWithLivePrState<T extends ReconcileableTask>
   if (!candidates.length) return tasks
 
   const out = [...tasks]
-  const repoSlugByInput = new Map<string, string | null>()
+  const repoSlugByInput = new Map<string, Promise<string | null>>()
   const nowMs = now()
 
-  for (const candidate of candidates) {
-    let repoSlug = repoSlugByInput.get(candidate.repoValue)
-    if (repoSlug === undefined) {
-      repoSlug = await resolveRepoSlug(candidate.repoValue)
-      repoSlugByInput.set(candidate.repoValue, repoSlug)
+  function getRepoSlug(repoValue: string): Promise<string | null> {
+    let memoized = repoSlugByInput.get(repoValue)
+    if (!memoized) {
+      memoized = resolveRepoSlug(repoValue)
+      repoSlugByInput.set(repoValue, memoized)
     }
-    if (!repoSlug) continue
+    return memoized
+  }
 
-    const snapshot = await fetchLivePrSnapshot(repoSlug, candidate.prNumber)
-    if (!snapshot) continue
+  const updates = await Promise.all(
+    candidates.map(async (candidate) => {
+      const repoSlug = await getRepoSlug(candidate.repoValue)
+      if (!repoSlug) return null
 
-    const nextTask = reconcileTaskWithLivePr(out[candidate.index], snapshot, nowMs) as T
-    out[candidate.index] = nextTask
+      const snapshot = await fetchLivePrSnapshot(repoSlug, candidate.prNumber)
+      if (!snapshot) return null
+
+      const currentTask = out[candidate.index]
+      const nextTask = reconcileTaskWithLivePr(currentTask, snapshot, nowMs) as T
+      if (nextTask === currentTask) return null
+      return { index: candidate.index, task: nextTask }
+    }),
+  )
+
+  for (const update of updates) {
+    if (!update) continue
+    out[update.index] = update.task
   }
 
   return out
@@ -314,4 +330,5 @@ export async function reconcileTasksWithLivePrState<T extends ReconcileableTask>
 export default {
   reconcileTaskWithLivePr,
   reconcileTasksWithLivePrState,
+  shouldConsiderTask,
 }

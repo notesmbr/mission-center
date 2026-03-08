@@ -1,0 +1,119 @@
+You are repairing a swarm-authored draft PR that currently has failing review/check statuses.
+
+Repo: notesmbr/mission-center
+PR: #12
+Title: Fix stale task/PR reconciliation in dashboard
+Branch: feat/fix-stale-task/pr-reconciliation-in-dash
+Head SHA: 2977ca28af1c987f7db24c8eb1f6741d03be7732
+Required CI checks: lint typecheck unit e2e playwright 
+
+Failing statuses:
+Swarm / Gemini Review
+Swarm / Codex Review
+Swarm / Claude Review
+Swarm / Ready for Review
+
+PR body:
+Auto-created by swarm orchestrator (task fix-stale-task/pr-reconcilia-3b427540).
+
+Task: Fix stale task/PR reconciliation in dashboard
+
+Screenshot
+
+![Screenshot](https://raw.githubusercontent.com/notesmbr/mission-center/feat/fix-stale-task/pr-reconciliation-in-dash/docs/screenshots/trader-view.png)
+
+Test notes
+- (add local/CI test notes)
+
+Recent PR comments/reviews (includes swarm reviewer comments):
+### Codex Review
+- Verdict: **PASS**
+- Summary: PR reconciliation integration looks sound and covered by tests; no diff-evident build/runtime-breaking issues found.
+- Suggested fixes:
+  - In `shouldConsiderTask`, when `selectedTaskIds` is provided, non-selected tasks can still be considered if they match status/PR-state rules. Consider short-circuiting to `false` for non-selected IDs when a selection filter exists, to avoid reconciling the wrong task (especially with `maxCandidates: 1`).
+  - Consider adding a test with multiple tasks to verify `taskIds` filtering only reconciles the requested task and does not depend on task ordering.
+
+---
+
+### Gemini Review
+- Verdict: **FAIL**
+- Summary: The PR introduces sequential external CLI calls in a loop within API routes, posing a high risk of timeouts and significant performance degradation.
+- Critical issues:
+  - Sequential await loop in reconcileTasksWithLivePrState: The function executes 'gh' and 'git' CLI commands sequentially for up to 20 candidates. With a 2.5s timeout per call (GH_TIMEOUT_MS), a single API request could take up to 50 seconds. This is very likely to exceed standard serverless or proxy timeout limits (e.g., 10-30s) and cause runtime failures for the dashboard's status endpoint.
+- Suggested fixes:
+  - Parallelize PR snapshot fetching using Promise.all() in reconcileTasksWithLivePrState to reduce latency from O(n) to O(1) relative to the number of tasks.
+  - Remove the '.ts' extension from the import statement in tests/pr-reconciliation.test.ts to follow standard TypeScript module resolution conventions.
+  - Consider using the 'mergedAt' timestamp from the PR snapshot to set 'completedAt' instead of the current system time for better data accuracy.
+  - Move reconciliation to a background process or implement a debounce/throttling mechanism to avoid running expensive CLI operations on every status API poll.
+
+---
+
+### Image Requirement\n- Verdict: **PASS**\n- Why: Not required (no UI changes detected in this PR).
+
+---
+
+### Gemini Review\n- PR: notesmbr/mission-center#12\n- Head SHA: 2977ca28af1c987f7db24c8eb1f6741d03be7732\n- Generated: 2026-03-08T16:27:30Z\n
+
+I will locate the `mission-center` project and examine the changes in the specified files to perform the PR review.
+I will list the contents of the `mission-center` directory to understand its structure and locate the missing files.
+I will check the `pages/api` directory to locate the API-related files mentioned in the PR.
+I will list the contents of `pages/api/_lib` to confirm the presence of the `pr-reconciliation.ts` file.
+I will check the current git branch of the `mission-center` project to see if the changes are already present.
+I will search for `pr-reconciliation.ts` throughout the entire workspace to locate the file and understand why it wasn't found in the expected directory.
+I will list the contents of the worktree directory to verify the presence of the files mentioned in the PR.
+I will read the newly created `pr-reconciliation.ts` file to understand its implementation and functionality.
+I will examine `pages/api/swarm/status.ts` to see how the reconciliation logic is integrated and used within the API.
+I will now examine `pages/api/swarm/task-details.ts` to see how the reconciliation logic is applied at the individual task level.
+I will now read the `pr-reconciliation.test.ts` and `swarm-api.test.ts` files to evaluate the test coverage and ensure the new functionality is properly verified.
+- Verdict: **PASS**
+- Summary: This PR introduces a robust reconciliation layer for tasks and pull requests in the Mission Center dashboard. It utilizes the `gh` CLI to fetch live PR status, ensuring the dashboard accurately reflects when a task is merged or a PR is closed. The implementation includes smart caching for performance and comprehensive unit tests for both the core logic and API integration.
+- Findings:
+  - `pages/api/_lib/pr-reconciliation.ts`: Implements GH interaction with slug resolution and PR snapshot fetching. Features a 1-minute cache for PR states and a 10-minute cache for repository slugs to minimize redundant CLI calls.
+  - `pages/api/swarm/status.ts`: Integrates reconciliation into the main dashboard status endpoint, processing up to 20 "candidate" tasks (those with OPEN PRs or "stale ready" notes).
+  - `pages/api/swarm/task-details.ts`: Optimized to reconcile only the specific task being viewed, ensuring fast detail loads while maintaining data accuracy.
+  - `tests/pr-reconciliation.test.ts` & `tests/swarm-api.test.ts`: Provides strong test coverage, verifying stale note replacement, merged status updates, and API-level error handling.
+- Suggested next steps:
+  - Monitor API response latency in environments with many concurrent open tasks, as sequential `gh` calls could potentially approach request timeout limits if GitHub is slow.
+  - Consider a "reconcile on demand" button in the UI if background reconciliation is ever disabled for performance reasons.
+
+---
+
+### Codex Review\n- PR: notesmbr/mission-center#12\n- Head SHA: 2977ca28af1c987f7db24c8eb1f6741d03be7732\n- Generated: 2026-03-08T16:29:07Z\n
+
+- Verdict: **FAIL**\n- Summary: Codex produced no output.
+
+---
+
+### Claude Review\n- PR: notesmbr/mission-center#12\n- Head SHA: 2977ca28af1c987f7db24c8eb1f6741d03be7732\n- Generated: 2026-03-08T16:29:33Z\n
+
+- Verdict: **FAIL**
+
+- Summary: The diff is entirely unavailable, making it impossible to review the actual implementation. The PR was auto-generated by the swarm orchestrator and the description template was never filled in. The screenshot provided appears unrelated to the stated change (it shows a "trader-view" rather than any dashboard reconciliation UI). Without the diff, correctness, security, and code quality cannot be assessed.
+
+- Findings:
+  - **No diff available** — the diff field is empty due to an upstream error; this is a blocking issue for any meaningful review.
+  - **Unrelated screenshot** — `docs/screenshots/trader-view.png` does not appear to correspond to stale task/PR reconciliation in the dashboard. Either the wrong screenshot was attached or the image URL is wrong/missing.
+  - **Placeholder test notes** — "add local/CI test notes" was never replaced; no confirmation that tests were actually run.
+  - **Boilerplate PR description** — the auto-generated description was not updated with any context about root cause, approach, or risk.
+  - **Large new file with no context** — `pages/api/_lib/pr-reconciliation.ts` is 317 lines of net-new code; without the diff, it's impossible to check for correctness, error handling, auth gaps, or edge cases.
+  - **Two test files added** (`+60`, `+87` lines) — presence is positive, but coverage and quality cannot be verified without the diff.
+
+- Suggested next steps:
+  1. Re-capture and attach the correct diff (re-open or push a no-op commit to trigger diff generation).
+  2. Replace the screenshot with one that actually shows the reconciliation fix in the dashboard.
+  3. Fill in real test notes — paste CI run output or describe what was tested locally.
+  4. Add a human-written description covering: what was broken, how it's fixed, and any edge cases handled.
+  5. Re-request review once the above are addressed.
+
+Task:
+1) Inspect the branch and fix the failures/issues that are actionable in code.
+2) Run the relevant tests/checks locally when possible.
+3) Commit the fix with a clear message.
+4) Push the branch.
+5) If nothing actionable can be fixed automatically, do NOT make random changes.
+
+Constraints:
+- Stay on this branch.
+- Do not open a new PR.
+- Do not merge.
+- Focus on making the existing draft PR pass.
