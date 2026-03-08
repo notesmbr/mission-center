@@ -10,6 +10,7 @@ Real-time **local-only** monitoring for OpenClaw agents, cron jobs, and trader a
 ✅ **Activity Logs** - Maintenance + trader logs  
 ✅ **Crypto Trader View** - Local-only status, positions, trades, and kill switch  
 ✅ **Setup Snapshot** - Local OpenClaw config summary
+✅ **Global Skills View** - Filesystem-driven skill inventory with precedence (`workspace > shared > bundled`)
 
 ## Tech Stack
 
@@ -57,6 +58,16 @@ Or use the helper script (binds to 127.0.0.1):
 - `GET /api/trader/status` - Trader status from allowlisted files
 - `GET /api/trader/trades?limit=<N>` - Recent trades from `trades.jsonl` (default 50, max 500)
 - `POST /api/trader/kill-switch` - Enable/disable kill switch (`{ "enabled": true|false }`)
+- `GET /api/skills/global` - Global skills scan (`~/.openclaw/skills`, `/opt/homebrew/lib/node_modules/openclaw/skills`, `<workspace>/skills`) with precedence + invalid-skill reporting
+
+## Global Skills Sources
+
+- `workspace`: `<workspace>/skills` (highest precedence)
+- `shared`: `~/.openclaw/skills`
+- `bundled`: `/opt/homebrew/lib/node_modules/openclaw/skills` (lowest precedence)
+
+If the same skill name exists in multiple sources, Mission Center marks the active version using:
+`workspace > shared > bundled`.
 
 ## Trader File Contracts
 
