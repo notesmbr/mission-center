@@ -112,6 +112,28 @@ test('buildSwarmTaskDetailsResponse validates method and id', async () => {
   }
 })
 
+test('buildSwarmTaskDetailsResponse returns host unavailable reason when swarm files are missing', async () => {
+  const deps: SwarmTaskDetailsDependencies = {
+    readActiveTasks: () => ({ tasks: [] }),
+    sanitizeTask,
+    readTaskSessionLogTail: () => ({ available: false, reason: 'no log available' }),
+    isValidTaskId: () => true,
+    getSwarmHostAvailability: () => ({
+      available: false,
+      reason: 'Swarm status is only available when Mission Center runs on the OpenClaw host. Missing .clawdbot/active-tasks.json.',
+    }),
+    now: () => 1_700_000_000_000,
+  }
+
+  const result = await buildSwarmTaskDetailsResponse({ method: 'GET', query: { id: 'task-1' } } as any, deps)
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.available, false)
+  if (!result.body.available) {
+    assert.equal(result.body.reason.includes('OpenClaw host'), true)
+    assert.equal(typeof result.body.lastUpdated, 'string')
+  }
+})
+
 test('buildSwarmTaskDetailsResponse returns task + tmux attach command + log tail', async () => {
   const deps: SwarmTaskDetailsDependencies = {
     readActiveTasks: () => ({
