@@ -292,6 +292,41 @@ type ProjectsSummaryData =
   | { dataSource: 'clawdbot_projects_summary'; available: true; projects: ProjectSummary[]; lastUpdated: string }
   | { dataSource: 'clawdbot_projects_summary'; available: false; reason: string; lastUpdated: string }
 
+type GlobalSkillItem = {
+  name: string
+  description: string
+  source: 'bundled' | 'shared' | 'workspace'
+  path: string
+  modifiedAt: string
+  overriddenBy: string[]
+  overrides: string[]
+}
+
+type InvalidGlobalSkillItem = {
+  name: string
+  source: 'bundled' | 'shared' | 'workspace'
+  path: string
+  reason: string
+}
+
+type GlobalSkillsData =
+  | {
+      dataSource: 'openclaw_global_skills'
+      available: true
+      roots: { bundled: string; shared: string; workspace: string }
+      precedence: Array<'workspace' | 'shared' | 'bundled'>
+      skills: GlobalSkillItem[]
+      invalid: InvalidGlobalSkillItem[]
+      counts: { bundled: number; shared: number; workspace: number; active: number; total: number; invalid: number }
+      lastUpdated: string
+    }
+  | {
+      dataSource: 'openclaw_global_skills'
+      available: false
+      reason: string
+      lastUpdated: string
+    }
+
 type AnyJson = any
 
 function msToRelative(ms?: number): string {
@@ -366,6 +401,13 @@ function scheduleLabel(job: any): string {
   return sch.kind
 }
 
+function skillSourceClass(source?: string): string {
+  if (source === 'workspace') return 'bg-emerald-900/60 text-emerald-200 border-emerald-800'
+  if (source === 'shared') return 'bg-blue-900/60 text-blue-200 border-blue-800'
+  if (source === 'bundled') return 'bg-slate-700/60 text-slate-200 border-slate-600'
+  return 'bg-slate-800 text-slate-200 border-slate-600'
+}
+
 function groupBy<T>(items: T[], keyFn: (t: T) => string): Array<{ key: string; items: T[] }> {
   const m = new Map<string, T[]>()
   for (const item of items) {
@@ -390,6 +432,7 @@ export default function Home() {
   const [swarmData, setSwarmData] = useState<SwarmStatusData | null>(null)
   const [cronData, setCronData] = useState<CronListData | null>(null)
   const [projectsData, setProjectsData] = useState<ProjectsSummaryData | null>(null)
+  const [globalSkillsData, setGlobalSkillsData] = useState<GlobalSkillsData | null>(null)
   const [traderStatus, setTraderStatus] = useState<TraderStatusData | null>(null)
   const [traderTrades, setTraderTrades] = useState<TraderTradesData | null>(null)
   const [traderTradesLimit, setTraderTradesLimit] = useState<number>(200)
@@ -400,6 +443,9 @@ export default function Home() {
   const [taskSearch, setTaskSearch] = useState('')
   const [taskAgentFilter, setTaskAgentFilter] = useState('all')
   const [taskStatusFilter, setTaskStatusFilter] = useState('all')
+  const [skillsSearch, setSkillsSearch] = useState('')
+  const [skillsSourceFilter, setSkillsSourceFilter] = useState<'all' | 'bundled' | 'shared' | 'workspace'>('all')
+  const [skillsStateFilter, setSkillsStateFilter] = useState<'all' | 'active' | 'overridden'>('all')
 
   const [selectedTaskId, setSelectedTaskId] = useState<string>('')
   const [taskDetails, setTaskDetails] = useState<SwarmTaskDetailsData | null>(null)
@@ -430,17 +476,19 @@ export default function Home() {
         safeFetchJson('/api/swarm/status'),
         safeFetchJson('/api/cron/list'),
         safeFetchJson('/api/projects/summary'),
+        safeFetchJson('/api/skills/global'),
         safeFetchJson('/api/trader/state'),
         safeFetchJson(`/api/trader/trades?limit=${encodeURIComponent(String(traderTradesLimit))}`),
       ])
 
-      const [statusRes, agentsRes, swarmRes, cronRes, projectsRes, traderStatusRes, traderTradesRes] = results
+      const [statusRes, agentsRes, swarmRes, cronRes, projectsRes, globalSkillsRes, traderStatusRes, traderTradesRes] = results
 
       if (statusRes.status === 'fulfilled') setStatusData(statusRes.value)
       if (agentsRes.status === 'fulfilled') setAgentsData(agentsRes.value)
       if (swarmRes.status === 'fulfilled') setSwarmData(swarmRes.value)
       if (cronRes.status === 'fulfilled') setCronData(cronRes.value)
       if (projectsRes.status === 'fulfilled') setProjectsData(projectsRes.value)
+      if (globalSkillsRes.status === 'fulfilled') setGlobalSkillsData(globalSkillsRes.value)
       if (traderStatusRes.status === 'fulfilled') setTraderStatus(traderStatusRes.value)
       if (traderTradesRes.status === 'fulfilled') setTraderTrades(traderTradesRes.value)
 
@@ -744,6 +792,30 @@ export default function Home() {
     if (!projectsData || !projectsData.available) return [] as ProjectSummary[]
     return projectsData.projects.filter((project) => selectedProject === 'all' || project.id === selectedProject)
   }, [projectsData, selectedProject])
+
+  const allGlobalSkills = useMemo(() => {
+    if (!globalSkillsData || !globalSkillsData.available) return [] as GlobalSkillItem[]
+    return globalSkillsData.skills || []
+  }, [globalSkillsData])
+
+  const filteredGlobalSkills = useMemo(() => {
+    const query = skillsSearch.trim().toLowerCase()
+
+    return allGlobalSkills.filter((skill) => {
+      if (skillsSourceFilter !== 'all' && skill.source !== skillsSourceFilter) return false
+
+      const isActive = !skill.overriddenBy || skill.overriddenBy.length === 0
+      if (skillsStateFilter === 'active' && !isActive) return false
+      if (skillsStateFilter === 'overridden' && isActive) return false
+
+      if (!query) return true
+      return (
+        skill.name.toLowerCase().includes(query) ||
+        skill.description.toLowerCase().includes(query) ||
+        skill.path.toLowerCase().includes(query)
+      )
+    })
+  }, [allGlobalSkills, skillsSearch, skillsSourceFilter, skillsStateFilter])
 
   const jobBuckets = useMemo(() => {
     const needs: any[] = []
@@ -1337,6 +1409,172 @@ export default function Home() {
       )}
     </div>
   )
+
+  const GlobalSkillsView = () => (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <div className="text-white text-lg font-semibold">Global Skills</div>
+          <div className="text-slate-500 text-xs">Filesystem-driven skill inventory across workspace/shared/bundled sources.</div>
+        </div>
+        <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
+      </div>
+
+      <div className="card">
+        <div className="text-white font-semibold">Precedence Rules</div>
+        <div className="text-slate-400 text-sm mt-1">
+          Active skill resolution uses <span className="text-slate-200">workspace {'>'} shared {'>'} bundled</span>.
+          Higher-precedence skills override lower-precedence versions with the same name.
+        </div>
+      </div>
+
+      {!globalSkillsData ? (
+        <div className="card">
+          <div className="text-white font-semibold">Global skills unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
+        </div>
+      ) : !globalSkillsData.available ? (
+        <div className="card">
+          <div className="text-white font-semibold">Global skills unavailable</div>
+          <div className="text-slate-400 text-sm mt-1">{globalSkillsData.reason}</div>
+        </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3">
+            <div className="card">
+              <div className="text-slate-500 text-xs">workspace</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.workspace}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-500 text-xs">shared</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.shared}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-500 text-xs">bundled</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.bundled}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-500 text-xs">active</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.active}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-500 text-xs">total variants</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.total}</div>
+            </div>
+            <div className="card">
+              <div className="text-slate-500 text-xs">invalid</div>
+              <div className="text-2xl font-bold mt-2">{globalSkillsData.counts.invalid}</div>
+            </div>
+          </div>
+
+          <div className="card space-y-3">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <input
+                value={skillsSearch}
+                onChange={(e) => setSkillsSearch(e.target.value)}
+                placeholder="Search skills"
+                className="w-full bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+              />
+              <select
+                value={skillsSourceFilter}
+                onChange={(e) => setSkillsSourceFilter(e.target.value as 'all' | 'bundled' | 'shared' | 'workspace')}
+                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+              >
+                <option value="all">All sources</option>
+                <option value="workspace">workspace</option>
+                <option value="shared">shared</option>
+                <option value="bundled">bundled</option>
+              </select>
+              <select
+                value={skillsStateFilter}
+                onChange={(e) => setSkillsStateFilter(e.target.value as 'all' | 'active' | 'overridden')}
+                className="bg-slate-900 border border-slate-700 text-slate-200 text-sm rounded-lg px-3 py-2"
+              >
+                <option value="all">All states</option>
+                <option value="active">Active only</option>
+                <option value="overridden">Overridden only</option>
+              </select>
+            </div>
+
+            <div className="text-slate-500 text-xs break-all">
+              workspace: {globalSkillsData.roots.workspace} • shared: {globalSkillsData.roots.shared} • bundled: {globalSkillsData.roots.bundled}
+            </div>
+          </div>
+
+          {globalSkillsData.skills.length === 0 ? (
+            <div className="card">
+              <div className="text-white font-semibold">No skills detected</div>
+              <div className="text-slate-400 text-sm mt-1">No valid `SKILL.md` files were found in the configured roots.</div>
+            </div>
+          ) : filteredGlobalSkills.length === 0 ? (
+            <div className="card">
+              <div className="text-white font-semibold">No matching skills</div>
+              <div className="text-slate-400 text-sm mt-1">Try broadening the search or filters.</div>
+            </div>
+          ) : (
+            <div className="card p-0 overflow-hidden">
+              <div className="overflow-x-auto">
+                <table className="min-w-[1300px] w-full text-xs">
+                  <thead className="bg-slate-900/70">
+                    <tr className="text-slate-400">
+                      <th className="text-left px-3 py-2 font-medium">name</th>
+                      <th className="text-left px-3 py-2 font-medium">description</th>
+                      <th className="text-left px-3 py-2 font-medium">source</th>
+                      <th className="text-left px-3 py-2 font-medium">state</th>
+                      <th className="text-left px-3 py-2 font-medium">modified</th>
+                      <th className="text-left px-3 py-2 font-medium">path</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filteredGlobalSkills.map((skill) => {
+                      const isActive = skill.overriddenBy.length === 0
+                      return (
+                        <tr key={skill.path} className={'border-t border-slate-800 ' + (isActive ? 'bg-emerald-950/10' : '')}>
+                          <td className="px-3 py-2 text-slate-100 align-top whitespace-nowrap">{skill.name}</td>
+                          <td className="px-3 py-2 text-slate-300 align-top max-w-[360px]">{skill.description}</td>
+                          <td className="px-3 py-2 align-top">
+                            <span className={`inline-flex border rounded-full px-2 py-1 text-[11px] ${skillSourceClass(skill.source)}`}>{skill.source}</span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 align-top">
+                            <div className={isActive ? 'text-emerald-200' : 'text-slate-300'}>{isActive ? 'active' : 'overridden'}</div>
+                            {skill.overrides.length > 0 && <div className="text-slate-500 mt-1">overrides {skill.overrides.length} lower-precedence version(s)</div>}
+                            {skill.overriddenBy.length > 0 && (
+                              <div className="text-slate-500 mt-1">overridden by {skill.overriddenBy.length} higher-precedence version(s)</div>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-slate-300 align-top whitespace-nowrap">{isoToHuman(skill.modifiedAt)}</td>
+                          <td className="px-3 py-2 text-slate-500 align-top break-all">{skill.path}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+
+          {globalSkillsData.invalid.length > 0 && (
+            <div className="card">
+              <div className="text-white font-semibold">Invalid skill folders</div>
+              <div className="text-slate-400 text-xs mt-1">These entries are listed but skipped from active skill resolution.</div>
+              <div className="mt-3 space-y-2">
+                {globalSkillsData.invalid.map((item) => (
+                  <div key={`${item.path}-${item.reason}`} className="bg-slate-950/40 border border-slate-700 rounded-lg p-3">
+                    <div className="text-slate-100 text-sm">
+                      {item.name} <span className="text-slate-500">({item.source})</span>
+                    </div>
+                    <div className="text-slate-500 text-xs mt-1 break-all">{item.path}</div>
+                    <div className="text-rose-200 text-xs mt-1">{item.reason}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </>
+      )}
+    </div>
+  )
+
   const TasksView = () => (
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
@@ -2025,6 +2263,7 @@ export default function Home() {
               {activeTab === 'overview' && <OverviewView />}
               {activeTab === 'trader' && <TraderView />}
               {activeTab === 'projects' && <ProjectsView />}
+              {activeTab === 'skills' && <GlobalSkillsView />}
               {activeTab === 'tasks' && <TasksView />}
               {activeTab === 'jobs' && <JobsView />}
               {activeTab === 'agents' && <AgentsView />}
