@@ -1,15 +1,16 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { sanitizeTask, sanitizeTasks } from '../lib/swarm.ts'
-import { buildSwarmStatusResponse, type SwarmStatusDependencies } from '../pages/api/swarm/status.ts'
-import { buildSwarmTaskDetailsResponse, type SwarmTaskDetailsDependencies } from '../pages/api/swarm/task-details.ts'
+import { sanitizeTask, sanitizeTasks } from '../lib/swarm'
+import { buildSwarmStatusResponse, type SwarmStatusDependencies } from '../pages/api/swarm/status'
+import { buildSwarmTaskDetailsResponse, type SwarmTaskDetailsDependencies } from '../pages/api/swarm/task-details'
 
 test('buildSwarmStatusResponse rejects non-GET requests', async () => {
   const deps: SwarmStatusDependencies = {
     readActiveTasks: () => ({ tasks: [] }),
     readClawdbotConfig: () => ({ projects: [] }),
     sanitizeTasks,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     getSwarmHostAvailability: () => ({ available: true }),
     now: () => 1_700_000_000_000,
   }
@@ -24,6 +25,7 @@ test('buildSwarmStatusResponse returns local-host unavailable reason when paths 
     readActiveTasks: () => ({ tasks: [] }),
     readClawdbotConfig: () => ({ projects: [] }),
     sanitizeTasks,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     getSwarmHostAvailability: () => ({
       available: false,
       reason: 'Swarm status is only available when Mission Center runs on the OpenClaw host.',
@@ -67,6 +69,7 @@ test('buildSwarmStatusResponse returns summary/grouping/filter metadata', async 
       },
     }),
     sanitizeTasks,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     getSwarmHostAvailability: () => ({ available: true }),
     now: () => 1_700_000_000_000,
   }
@@ -95,6 +98,7 @@ test('buildSwarmTaskDetailsResponse validates method and id', async () => {
   const deps: SwarmTaskDetailsDependencies = {
     readActiveTasks: () => ({ tasks: [] }),
     sanitizeTask,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     readTaskSessionLogTail: () => ({ available: false, reason: 'no log available' }),
     isValidTaskId: (taskId) => taskId === 'task-1',
     getSwarmHostAvailability: () => ({ available: true }),
@@ -116,6 +120,7 @@ test('buildSwarmTaskDetailsResponse returns host unavailable reason when swarm f
   const deps: SwarmTaskDetailsDependencies = {
     readActiveTasks: () => ({ tasks: [] }),
     sanitizeTask,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     readTaskSessionLogTail: () => ({ available: false, reason: 'no log available' }),
     isValidTaskId: () => true,
     getSwarmHostAvailability: () => ({
@@ -149,6 +154,7 @@ test('buildSwarmTaskDetailsResponse returns task + tmux attach command + log tai
       ],
     }),
     sanitizeTask,
+    reconcileTasksWithLivePrState: async (tasks) => tasks,
     readTaskSessionLogTail: () => ({ available: true, path: '.clawdbot/.claw-worktrees/task-1/.clawdbot/session.log', tail: 'line1', lineCount: 1 }),
     isValidTaskId: (taskId) => taskId === 'task-1',
     getSwarmHostAvailability: () => ({ available: true }),
@@ -165,5 +171,97 @@ test('buildSwarmTaskDetailsResponse returns task + tmux attach command + log tai
     assert.equal(result.body.helperCommands.routeProjectNotifications.includes('[--channel <channel>]'), true)
     assert.equal(result.body.log.available, true)
     assert.equal('prompt' in result.body.task, false)
+  }
+})
+
+test('buildSwarmStatusResponse reflects reconciled merged PR state and note', async () => {
+  const deps: SwarmStatusDependencies = {
+    readActiveTasks: () => ({
+      tasks: [
+        {
+          id: 'task-1',
+          projectId: 'mission-center',
+          status: 'done',
+          note: 'All done-gate checks passed. Ready to merge.',
+          pr: { number: 42, state: 'OPEN', url: 'https://example.test/pr/42' },
+        } as any,
+      ],
+    }),
+    readClawdbotConfig: () => ({ projects: [{ id: 'mission-center' }] }),
+    sanitizeTasks,
+    reconcileTasksWithLivePrState: async (tasks) => [
+      {
+        ...tasks[0],
+        status: 'done',
+        note: 'Merged: https://example.test/pr/42',
+        pr: { number: 42, state: 'MERGED', url: 'https://example.test/pr/42' },
+      } as any,
+    ],
+    getSwarmHostAvailability: () => ({ available: true }),
+    now: () => 1_700_000_000_000,
+  }
+
+  const result = await buildSwarmStatusResponse({ method: 'GET' } as any, deps)
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.available, true)
+  if (result.body.available) {
+    assert.equal(result.body.tasks[0]?.pr?.state, 'MERGED')
+    assert.equal(result.body.tasks[0]?.note, 'Merged: https://example.test/pr/42')
+  }
+})
+
+test('buildSwarmTaskDetailsResponse reconciles only selected task id', async () => {
+  let capturedTaskIds: string[] | undefined
+  let capturedMaxCandidates: number | undefined
+
+  const deps: SwarmTaskDetailsDependencies = {
+    readActiveTasks: () => ({
+      tasks: [
+        {
+          id: 'task-0',
+          projectId: 'mission-center',
+          status: 'done',
+          note: 'All done-gate checks passed. Ready to merge.',
+          pr: { number: 6, state: 'OPEN', url: 'https://example.test/pr/6' },
+        } as any,
+        {
+          id: 'task-1',
+          projectId: 'mission-center',
+          status: 'done',
+          note: 'All done-gate checks passed. Ready to merge.',
+          pr: { number: 7, state: 'OPEN', url: 'https://example.test/pr/7' },
+        } as any,
+      ],
+    }),
+    sanitizeTask,
+    reconcileTasksWithLivePrState: async (tasks, options) => {
+      capturedTaskIds = options?.taskIds
+      capturedMaxCandidates = options?.maxCandidates
+      const selected = new Set(options?.taskIds || [])
+      return tasks.map((task) =>
+        selected.has(String(task.id || ''))
+          ? ({
+              ...task,
+              note: 'Merged: https://example.test/pr/7',
+              pr: { number: 7, state: 'MERGED', url: 'https://example.test/pr/7' },
+            } as any)
+          : task,
+      )
+    },
+    readTaskSessionLogTail: () => ({ available: false, reason: 'no log available' }),
+    isValidTaskId: (taskId) => taskId === 'task-1',
+    getSwarmHostAvailability: () => ({ available: true }),
+    now: () => 1_700_000_000_000,
+  }
+
+  const result = await buildSwarmTaskDetailsResponse({ method: 'GET', query: { id: 'task-1' } } as any, deps)
+  assert.equal(result.statusCode, 200)
+  assert.equal(result.body.available, true)
+  assert.deepEqual(capturedTaskIds, ['task-1'])
+  assert.equal(capturedMaxCandidates, 1)
+  if (result.body.available) {
+    assert.equal(result.body.task.id, 'task-1')
+    assert.equal(result.body.task.pr?.state, 'MERGED')
+    assert.equal(result.body.task.note, 'Merged: https://example.test/pr/7')
   }
 })
