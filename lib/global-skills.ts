@@ -126,14 +126,15 @@ function scanSkillSource(rootPath: string, source: GlobalSkillSource): { skills:
     const skillDirPath = path.join(rootPath, entry.name)
     const skillMdPath = path.join(skillDirPath, 'SKILL.md')
 
-    let hasSkillFile = false
+    let skillFileStat: fs.Stats | null = null
     try {
-      hasSkillFile = fs.existsSync(skillMdPath) && fs.statSync(skillMdPath).isFile()
+      const st = fs.statSync(skillMdPath)
+      skillFileStat = st.isFile() ? st : null
     } catch {
-      hasSkillFile = false
+      skillFileStat = null
     }
 
-    if (!hasSkillFile) {
+    if (!skillFileStat) {
       invalid.push({
         name: entry.name,
         source,
@@ -146,13 +147,12 @@ function scanSkillSource(rootPath: string, source: GlobalSkillSource): { skills:
     try {
       const rawSkill = fs.readFileSync(skillMdPath, 'utf-8')
       const parsed = parseSkillMarkdown(rawSkill)
-      const st = fs.statSync(skillMdPath)
       skills.push({
         name: parsed.name,
         description: parsed.description,
         source,
         path: skillDirPath,
-        modifiedAt: st.mtime.toISOString(),
+        modifiedAt: skillFileStat.mtime.toISOString(),
       })
     } catch (error: any) {
       invalid.push({

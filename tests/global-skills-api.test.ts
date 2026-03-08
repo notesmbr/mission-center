@@ -75,3 +75,8 @@ test('resolveBundledSkillsRoot picks first existing fallback candidate', () => {
   const resolved = resolveBundledSkillsRoot(undefined, (candidate) => existing.has(candidate))
   assert.equal(resolved, '/usr/local/lib/node_modules/openclaw/skills')
 })
+
+test('resolveBundledSkillsRoot falls back to exec-path derived location when none exist', () => {
+  const resolved = resolveBundledSkillsRoot(undefined, () => false, '/usr/local/bin/node', 'linux')
+  assert.equal(resolved, '/usr/local/lib/node_modules/openclaw/skills')
+})

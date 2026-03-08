@@ -41,19 +41,26 @@ function isExistingDirectory(absPath: string): boolean {
   }
 }
 
+function getBundledSkillsCandidates(nodeExecPath: string, platform: NodeJS.Platform): string[] {
+  const fromExecPath = path.resolve(path.dirname(nodeExecPath), '..', 'lib', 'node_modules', 'openclaw', 'skills')
+  const platformSpecific =
+    platform === 'darwin'
+      ? ['/opt/homebrew/lib/node_modules/openclaw/skills', '/usr/local/lib/node_modules/openclaw/skills']
+      : ['/usr/local/lib/node_modules/openclaw/skills', '/usr/lib/node_modules/openclaw/skills']
+
+  return Array.from(new Set([fromExecPath, ...platformSpecific, '/opt/homebrew/lib/node_modules/openclaw/skills']))
+}
+
 export function resolveBundledSkillsRoot(
   envDir: string | undefined,
   isDirectory: (absPath: string) => boolean = isExistingDirectory,
+  nodeExecPath: string = process.execPath,
+  platform: NodeJS.Platform = process.platform,
 ): string {
   const envValue = String(envDir || '').trim()
   if (envValue) return envValue
 
-  const candidates = [
-    '/opt/homebrew/lib/node_modules/openclaw/skills',
-    '/usr/local/lib/node_modules/openclaw/skills',
-    '/usr/lib/node_modules/openclaw/skills',
-    path.resolve(process.execPath, '../../lib/node_modules/openclaw/skills'),
-  ]
+  const candidates = getBundledSkillsCandidates(nodeExecPath, platform)
 
   const existing = candidates.find((candidate) => isDirectory(candidate))
   return existing || candidates[0]
