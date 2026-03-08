@@ -1,9 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { sanitizeTask, sanitizeTasks } from '../lib/swarm.ts'
-import { buildSwarmStatusResponse, type SwarmStatusDependencies } from '../pages/api/swarm/status.ts'
-import { buildSwarmTaskDetailsResponse, type SwarmTaskDetailsDependencies } from '../pages/api/swarm/task-details.ts'
+import { sanitizeTask, sanitizeTasks } from '../lib/swarm'
+import { buildSwarmStatusResponse, type SwarmStatusDependencies } from '../pages/api/swarm/status'
+import { buildSwarmTaskDetailsResponse, type SwarmTaskDetailsDependencies } from '../pages/api/swarm/task-details'
 
 test('buildSwarmStatusResponse rejects non-GET requests', async () => {
   const deps: SwarmStatusDependencies = {
