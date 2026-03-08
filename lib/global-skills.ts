@@ -66,7 +66,7 @@ function parseSimpleFrontmatter(frontmatterText: string): Record<string, string>
   for (const rawLine of String(frontmatterText || '').split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line || line.startsWith('#')) continue
-    const match = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.+)\s*$/)
+    const match = line.match(/^([A-Za-z_][A-Za-z0-9_-]*)\s*:\s*(.*)\s*$/)
     if (!match) {
       throw new Error(`invalid frontmatter line: ${rawLine}`)
     }
@@ -198,14 +198,10 @@ export function scanGlobalSkills(roots: GlobalSkillRoots): GlobalSkillsScanResul
       return a.path.localeCompare(b.path)
     })
 
-    for (const skill of sorted) {
-      const rank = sourceRank(skill.source)
-      const overriddenBy = sorted
-        .filter((candidate) => sourceRank(candidate.source) > rank)
-        .map((candidate) => candidate.path)
-      const overrides = sorted
-        .filter((candidate) => sourceRank(candidate.source) < rank)
-        .map((candidate) => candidate.path)
+    for (let index = 0; index < sorted.length; index += 1) {
+      const skill = sorted[index]
+      const overriddenBy = sorted.slice(0, index).map((candidate) => candidate.path)
+      const overrides = sorted.slice(index + 1).map((candidate) => candidate.path)
 
       resolved.push({
         ...skill,

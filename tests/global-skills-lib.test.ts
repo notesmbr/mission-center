@@ -88,3 +88,39 @@ test('scanGlobalSkills resolves precedence and reports invalid folders', () => {
     fs.rmSync(tmpRoot, { recursive: true, force: true })
   }
 })
+
+test('scanGlobalSkills normalizes names and picks one active per normalized group', () => {
+  const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'mission-center-skills-dedup-'))
+  const bundled = path.join(tmpRoot, 'bundled')
+  const shared = path.join(tmpRoot, 'shared')
+  const workspace = path.join(tmpRoot, 'workspace')
+
+  fs.mkdirSync(bundled, { recursive: true })
+  fs.mkdirSync(shared, { recursive: true })
+  fs.mkdirSync(workspace, { recursive: true })
+
+  const workspaceAlpha = writeSkill(workspace, 'alpha-a', '  Alpha Skill  ', 'workspace alpha canonical')
+  const workspaceAlphaDuplicate = writeSkill(workspace, 'alpha-b', 'alpha skill', 'workspace alpha duplicate')
+  const sharedAlpha = writeSkill(shared, 'alpha-shared', 'ALPHA SKILL', 'shared alpha')
+  const bundledAlpha = writeSkill(bundled, 'alpha-bundled', 'alpha skill', 'bundled alpha')
+
+  try {
+    const result = scanGlobalSkills({ bundled, shared, workspace })
+
+    assert.equal(result.counts.total, 4)
+    assert.equal(result.counts.active, 1)
+
+    const alphaSkills = result.skills.filter((skill) => skill.name.trim().toLowerCase() === 'alpha skill')
+    assert.equal(alphaSkills.length, 4)
+
+    const activeSkills = alphaSkills.filter((skill) => skill.overriddenBy.length === 0)
+    assert.equal(activeSkills.length, 1)
+    assert.equal(activeSkills[0]?.path, workspaceAlpha)
+
+    const duplicateWorkspaceSkill = alphaSkills.find((skill) => skill.path === workspaceAlphaDuplicate)
+    assert.deepEqual(duplicateWorkspaceSkill?.overriddenBy || [], [workspaceAlpha])
+    assert.deepEqual((duplicateWorkspaceSkill?.overrides || []).sort(), [bundledAlpha, sharedAlpha].sort())
+  } finally {
+    fs.rmSync(tmpRoot, { recursive: true, force: true })
+  }
+})

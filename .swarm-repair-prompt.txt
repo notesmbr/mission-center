@@ -1,0 +1,134 @@
+You are repairing a swarm-authored draft PR that currently has failing review/check statuses.
+
+Repo: notesmbr/mission-center
+PR: #11
+Title: Global Skills view (filesystem-driven)
+Branch: feat/global-skills-view-filesystem-driven
+Head SHA: 600463d69295d6e69b30f220467b948bcae9356f
+Required CI checks: lint typecheck unit e2e playwright 
+
+Failing statuses:
+Swarm / Gemini Review
+Swarm / Codex Review
+Swarm / Claude Review
+Swarm / Ready for Review
+
+PR body:
+Auto-created by swarm orchestrator (task global-skills-view-filesyste-3db670a6).
+
+Task: Global Skills view (filesystem-driven)
+
+Screenshot
+
+![Screenshot](https://raw.githubusercontent.com/notesmbr/mission-center/feat/global-skills-view-filesystem-driven/docs/screenshots/trader-view.png)
+
+Test notes
+- (add local/CI test notes)
+
+Recent PR comments/reviews (includes swarm reviewer comments):
+### Codex Review
+- Verdict: **PASS**
+- Summary: Diff introduces a coherent global-skills scan feature (API + UI + tests) with no directly evident build/runtime-breaking defects in the shown changes.
+- Suggested fixes:
+  - Consider adding a test for duplicate skill names that differ only by case/whitespace to confirm intended active-resolution behavior.
+  - Consider documenting that `/api/skills/global` returns absolute filesystem paths, since this is potentially sensitive in non-local deployments.
+
+---
+
+### Gemini Review
+- Verdict: **PASS**
+- Summary: Implemented Global Skills View with filesystem scanning and precedence logic. Includes API endpoint, UI integration, and comprehensive tests.
+- Suggested fixes:
+  - Verify if 'isoToHuman' is an existing utility in pages/index.tsx or if it needs to be imported/defined, as it is used but not declared in the diff.
+  - The frontmatter parser in lib/global-skills.ts uses a strict regex (.+) for values; consider using (.*) to avoid throwing errors on empty but present frontmatter fields.
+  - In lib/global-skills.ts, if multiple skills with the same name exist within the same source rank, they may all be marked as 'active' because the override logic only compares ranks; consider using the sorted index to ensure a unique active skill per name.
+
+---
+
+### Image Requirement\n- Verdict: **PASS**\n- Why: Not required (no UI changes detected in this PR).
+
+---
+
+### Gemini Review\n- PR: notesmbr/mission-center#11\n- Head SHA: 600463d69295d6e69b30f220467b948bcae9356f\n- Generated: 2026-03-08T16:20:15Z\n
+
+I will start by locating and exploring the `mission-center` directory to verify the presence of the changed files and understand the implementation of the "Global Skills view."
+I will read the core implementation files, specifically `lib/global-skills.ts` and `pages/api/skills/global.ts`, to understand the filesystem-driven skills logic.
+I will list the contents of `mission-center/lib` and `mission-center/pages/api` to verify if the files mentioned in the PR are present or if I'm on a different branch.
+I will check for a git repository in `mission-center` and list its branches to see if I can find the branch mentioned in the PR.
+I will use `glob` to search for `global-skills.ts` in the workspace to confirm if the files are located in a different directory or branch.
+I will list the files in the `global-skills-view-filesyste-3db670a6` worktree to confirm they match the PR description and understand the implementation details.
+I will read the core implementation and test files in the `global-skills-view-filesyste-3db670a6` worktree to assess the quality of the PR's logic and testing.
+I will examine the UI changes in `pages/index.tsx` and `components/Sidebar.tsx` to understand how the global skills are integrated and displayed in the frontend.
+I will read the test files `tests/global-skills-api.test.ts` and `tests/global-skills-lib.test.ts` to ensure that the new functionality is thoroughly tested and that the tests are well-structured.
+I will check the `docs/screenshots` directory in the worktree to see if there is a more appropriate screenshot for the "Global Skills view" and to verify if the provided screenshot is correct.
+I will read the `README.md` file in the worktree to see if it includes any information about the "Global Skills view" or if it references the screenshot provided in the PR.
+I will read `pages/api/_lib/paths.ts` to confirm that `OPENCLAW_DIR` and `WORKSPACE_ROOT` are correctly defined and imported, ensuring the API handler functions as expected.
+I will check the `package.json` file to identify the test script and then attempt to run the newly added tests, ensuring they pass as expected.
+I will read the `scripts/run-tests.mjs` file to understand how it executes tests, allowing me to run the new global skills tests and confirm their success.
+I will use the `generalist` sub-agent to execute the global skills tests, ensuring they pass and confirming the integrity of the PR.
+The implementation is solid and well-integrated. It follows existing patterns, includes comprehensive tests, and correctly handles skill precedence and overrides. The only minor issues are the incorrect screenshot reference in the PR description and the hardcoded path for bundled skills on macOS, which is acceptable for a local-first dashboard.
+
+- Verdict: **PASS**
+- Summary: The PR successfully implements a filesystem-driven Global Skills view, allowing users to browse and monitor skill inventory across multiple sources (workspace, shared, and bundled). The implementation includes a robust backend scanner with precedence-based resolution, a new API endpoint, and a well-integrated UI tab in the dashboard.
+- Findings:
+  - Core logic in `lib/global-skills.ts` correctly handles skill resolution using the `workspace > shared > bundled` precedence rule.
+  - Comprehensive unit tests were added in `tests/global-skills-lib.test.ts` and `tests/global-skills-api.test.ts`, covering edge cases like invalid frontmatter and missing `SKILL.md` files.
+  - The UI integration in `pages/index.tsx` and `components/Sidebar.tsx` is clean and consistent with the existing dashboard design.
+  - **Minor**: The screenshot provided in the PR description (`trader-view.png`) appears to be incorrectly named or referenced, as it likely points to the Trader view rather than the new Global Skills view.
+  - **Minor**: The bundled skills path is hardcoded for macOS Homebrew installations, which may not be portable to other environments without setting the `OPENCLAW_BUNDLED_SKILLS_DIR` environment variable.
+- Suggested next steps:
+  - Update the PR description with the correct screenshot of the Global Skills view.
+  - Consider making the default `bundled` skills path more portable or providing a clearer fallback for non-macOS systems.
+
+---
+
+### Codex Review\n- PR: notesmbr/mission-center#11\n- Head SHA: 600463d69295d6e69b30f220467b948bcae9356f\n- Generated: 2026-03-08T16:26:20Z\n
+
+- Verdict: **FAIL**\n- Summary: Codex produced no output.
+
+---
+
+### Claude Review\n- PR: notesmbr/mission-center#11\n- Head SHA: 600463d69295d6e69b30f220467b948bcae9356f\n- Generated: 2026-03-08T16:26:41Z\n
+
+## PR Review: Global Skills view (filesystem-driven)
+
+---
+
+**Verdict: FAIL**
+
+**Summary:**
+This PR introduces a filesystem-driven global skills view with a new library, API route, index page changes, and tests. However, the diff was not captured, making code-level review impossible. Several red flags exist even from the metadata alone: the screenshot appears to be wrong, test notes are empty, and the PR was auto-generated with no human context. The "filesystem-driven" label warrants security scrutiny that cannot be performed without the diff.
+
+---
+
+**Findings:**
+
+- **Missing diff** — No code was available for review. This alone is grounds to block the PR until a proper diff can be inspected.
+- **Wrong screenshot** — The screenshot URL references `trader-view.png`, which has nothing to do with a "Global Skills view." This suggests the screenshot was copy-pasted from another task and the actual UI has not been validated.
+- **Empty test notes** — The "Test notes" section contains only a placeholder. There is no evidence this was run locally or in CI.
+- **Auto-created with no human context** — The description is boilerplate from the swarm orchestrator. No rationale, design decisions, or edge cases are documented.
+- **Security concern (unverified)** — `lib/global-skills.ts` (+258 lines) is described as "filesystem-driven." Without the diff, it's impossible to verify whether path traversal, sandboxing, or input validation are handled correctly in `pages/api/skills/global.ts`.
+- **Large, unreviewed surface area** — `pages/index.tsx` (+240/-1) is a significant change to the main page with no description of what changed or why.
+
+---
+
+**Suggested next steps:**
+
+1. Re-run the PR diff capture and re-submit for review with full diff visible.
+2. Replace the screenshot with the correct one showing the Global Skills view UI.
+3. Add test notes: confirm tests pass locally (`npm test` or equivalent) and note any CI results.
+4. Add a human-written description covering: what the feature does, how the filesystem is accessed safely, and any known limitations.
+5. Specifically audit `pages/api/skills/global.ts` for path traversal vulnerabilities and ensure the endpoint is properly authenticated before merging.
+
+Task:
+1) Inspect the branch and fix the failures/issues that are actionable in code.
+2) Run the relevant tests/checks locally when possible.
+3) Commit the fix with a clear message.
+4) Push the branch.
+5) If nothing actionable can be fixed automatically, do NOT make random changes.
+
+Constraints:
+- Stay on this branch.
+- Do not open a new PR.
+- Do not merge.
+- Focus on making the existing draft PR pass.
