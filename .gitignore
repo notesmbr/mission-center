@@ -13,5 +13,6 @@ deploy
 
 # Swarm/task artifacts
 .clawdbot/
+.swarm-repair-prompt.txt
 *.patch
 PR_BODY_*.md
