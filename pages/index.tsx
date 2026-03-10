@@ -222,6 +222,7 @@ type TraderStatusData =
       strategyParams: TraderStrategyParamsSnapshot
       aiStrategist: TraderAiStrategistSnapshot
       products: string[]
+      entryProducts: string[]
       lastRunTs: string | null
       lastError: string | null
       killSwitchEnabled: boolean
@@ -353,9 +354,29 @@ function isoToHuman(ts?: string | null): string {
   return `${new Date(ms).toLocaleString()} (${msToRelative(ms)})`
 }
 
+function holdTime(openTs?: string | null, closeTs?: string | null): string {
+  if (!openTs || !closeTs) return 'n/a'
+  const openMs = Date.parse(openTs)
+  const closeMs = Date.parse(closeTs)
+  if (!Number.isFinite(openMs) || !Number.isFinite(closeMs)) return 'n/a'
+  const s = Math.max(0, Math.floor((closeMs - openMs) / 1000))
+  if (s < 60) return `${s}s`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m`
+  const h = Math.floor(m / 60)
+  return `${h}h`
+}
+
 function fmtUsd(value?: number | null): string {
   if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a'
   return `$${value.toFixed(2)}`
+}
+
+function fmtPriceOrProb(value?: number | null): string {
+  if (typeof value !== 'number' || Number.isNaN(value)) return 'n/a'
+  // Polymarket-style probabilities (0..1) render better as percentages.
+  if (value >= 0 && value <= 1.01) return `${(value * 100).toFixed(1)}%`
+  return fmtUsd(value)
 }
 
 function fmtNumber(value?: number | null, digits = 4): string {
@@ -923,13 +944,13 @@ export default function Home() {
   const OverviewView = () => (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
-        <div className="text-white text-lg font-semibold">Overview</div>
+        <div className="text-slate-100 text-lg font-semibold">Overview</div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s • last {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : 'n/a'}</div>
       </div>
 
       {!statusData ? (
         <div className="card">
-          <div className="text-white font-semibold">OpenClaw status unavailable</div>
+          <div className="text-slate-100 font-semibold">OpenClaw status unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : statusData.available ? (
@@ -957,14 +978,14 @@ export default function Home() {
         </div>
       ) : (
         <div className="card">
-          <div className="text-white font-semibold">OpenClaw unreachable</div>
+          <div className="text-slate-100 font-semibold">OpenClaw unreachable</div>
           <div className="text-slate-400 text-sm mt-1">{statusData.reason}</div>
         </div>
       )}
 
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         <div className="card">
-          <div className="text-white font-semibold">Quick links</div>
+          <div className="text-slate-100 font-semibold">Quick links</div>
           <div className="mt-3 space-y-2 text-sm">
             <a href="https://mbrs-mac-mini.tail9b718b.ts.net/" target="_blank" rel="noreferrer" className="text-blue-400 hover:underline block">
               OpenClaw Control UI
@@ -976,7 +997,7 @@ export default function Home() {
         </div>
 
         <div className="card">
-          <div className="text-white font-semibold">Active agents (last 5m)</div>
+          <div className="text-slate-100 font-semibold">Active agents (last 5m)</div>
           {!agentsData ? (
             <div className="text-slate-400 text-sm mt-2">No payload yet.</div>
           ) : !agentsData.available ? (
@@ -1013,20 +1034,20 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Trader</div>
-          <div className="text-slate-500 text-xs">Crypto trader (local-only allowlisted files)</div>
+          <div className="text-slate-100 text-lg font-semibold">Trader</div>
+          <div className="text-slate-500 text-xs">Local trader (reads autonomous-crypto-trader state.json + trades.jsonl)</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s • last {lastRefreshedAt ? new Date(lastRefreshedAt).toLocaleTimeString() : 'n/a'}</div>
       </div>
 
       {!traderStatus ? (
         <div className="card">
-          <div className="text-white font-semibold">Trader status unavailable</div>
+          <div className="text-slate-100 font-semibold">Trader status unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !traderStatus.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Trader unavailable</div>
+          <div className="text-slate-100 font-semibold">Trader unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{traderStatus.reason}</div>
         </div>
       ) : (
@@ -1067,8 +1088,9 @@ export default function Home() {
           )}
 
           <div className="card">
-            <div className="text-white font-semibold">Runtime</div>
-            <div className="text-slate-400 text-xs mt-1">products: {traderStatus.products.length ? traderStatus.products.join(', ') : 'n/a'}</div>
+            <div className="text-slate-100 font-semibold">Universe</div>
+            <div className="text-slate-400 text-xs mt-1">tracked: {traderStatus.products.length ? traderStatus.products.join(', ') : 'n/a'}</div>
+            <div className="text-slate-400 text-xs mt-1">entry: {traderStatus.entryProducts && traderStatus.entryProducts.length ? traderStatus.entryProducts.join(', ') : 'n/a'}</div>
             {traderStatus.lastError ? (
               <div className="mt-3 bg-rose-950/40 border border-rose-900 rounded-lg p-3">
                 <div className="text-rose-200 text-xs uppercase tracking-wide">Last error</div>
@@ -1081,7 +1103,7 @@ export default function Home() {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
             <div className="card">
-              <div className="text-white font-semibold">Risk</div>
+              <div className="text-slate-100 font-semibold">Risk</div>
               <div className="mt-2 text-sm space-y-1">
                 <div className="flex items-center justify-between"><span className="text-slate-400">drawdown halt</span><span className={traderStatus.risk.drawdownHalt ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.drawdownHalt ? 'yes' : 'no'}</span></div>
                 <div className="flex items-center justify-between"><span className="text-slate-400">cooldown active</span><span className={traderStatus.risk.cooldownActive ? 'text-rose-200' : 'text-emerald-200'}>{traderStatus.risk.cooldownActive ? 'yes' : 'no'}</span></div>
@@ -1093,7 +1115,7 @@ export default function Home() {
             </div>
 
             <div className="card">
-              <div className="text-white font-semibold">Strategy + AI strategist</div>
+              <div className="text-slate-100 font-semibold">Strategy + AI strategist</div>
               <div className="text-slate-400 text-xs mt-1">From state.json (strategy_params, ai_strategist)</div>
 
               <div className="mt-3 grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1127,7 +1149,7 @@ export default function Home() {
 
           <div className="card p-0 overflow-hidden">
             <div className="px-4 py-3 border-b border-slate-800">
-              <div className="text-white font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
+              <div className="text-slate-100 font-semibold">Open Positions ({traderStatus.openPositions.length})</div>
             </div>
             {traderStatus.openPositions.length === 0 ? (
               <div className="px-4 py-4 text-slate-400 text-sm">No open positions.</div>
@@ -1148,8 +1170,8 @@ export default function Home() {
                       <tr key={row.product} className="border-t border-slate-800">
                         <td className="px-3 py-2 text-slate-100">{row.product}</td>
                         <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qty)}</td>
-                        <td className="px-3 py-2 text-slate-300">{fmtUsd(row.entryPrice)}</td>
-                        <td className="px-3 py-2 text-slate-300">{fmtUsd(row.markPrice)}</td>
+                        <td className="px-3 py-2 text-slate-300">{fmtPriceOrProb(row.entryPrice)}</td>
+                        <td className="px-3 py-2 text-slate-300">{fmtPriceOrProb(row.markPrice)}</td>
                         <td className={`px-3 py-2 ${typeof row.unrealizedPnlUsd === 'number' && row.unrealizedPnlUsd < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
                           {fmtUsd(row.unrealizedPnlUsd)}
                         </td>
@@ -1192,18 +1214,18 @@ export default function Home() {
 
       {!traderTrades ? (
         <div className="card">
-          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-100 font-semibold">Recent trades unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !traderTrades.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Recent trades unavailable</div>
+          <div className="text-slate-100 font-semibold">Recent trades unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{traderTrades.reason}</div>
         </div>
       ) : (
         <div className="card p-0 overflow-hidden">
           <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between gap-3">
-            <div className="text-white font-semibold">Recent Trades (last {traderRows.length})</div>
+            <div className="text-slate-100 font-semibold">Recent Trades (last {traderRows.length})</div>
             <label className="text-xs text-slate-400 flex items-center gap-2">
               Rows
               <select
@@ -1232,6 +1254,7 @@ export default function Home() {
                     <th className="text-left px-3 py-2 font-medium">qty (base)</th>
                     <th className="text-left px-3 py-2 font-medium">entry</th>
                     <th className="text-left px-3 py-2 font-medium">exit</th>
+                    <th className="text-left px-3 py-2 font-medium">hold</th>
                     <th className="text-left px-3 py-2 font-medium">pnl $</th>
                     <th className="text-left px-3 py-2 font-medium">pnl %</th>
                     <th className="text-left px-3 py-2 font-medium">reason</th>
@@ -1244,8 +1267,9 @@ export default function Home() {
                       <td className="px-3 py-2 text-slate-100">{row.product}</td>
                       <td className="px-3 py-2 text-slate-300">{row.side || 'n/a'}</td>
                       <td className="px-3 py-2 text-slate-300">{fmtNumber(row.qtyBase)}</td>
-                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.entryPrice)}</td>
-                      <td className="px-3 py-2 text-slate-300">{fmtUsd(row.exitPrice)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtPriceOrProb(row.entryPrice)}</td>
+                      <td className="px-3 py-2 text-slate-300">{fmtPriceOrProb(row.exitPrice)}</td>
+                      <td className="px-3 py-2 text-slate-300">{holdTime(row.openTs, row.closeTs)}</td>
                       <td className={`px-3 py-2 ${typeof row.pnlUsd === 'number' && row.pnlUsd < 0 ? 'text-rose-200' : 'text-emerald-200'}`}>
                         {fmtUsd(row.pnlUsd)}
                       </td>
@@ -1272,7 +1296,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Projects</div>
+          <div className="text-slate-100 text-lg font-semibold">Projects</div>
           <div className="text-slate-500 text-xs">Big-picture context + current work by project</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -1280,22 +1304,22 @@ export default function Home() {
 
       {!projectsData ? (
         <div className="card">
-          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-100 font-semibold">Projects unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !projectsData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Projects unavailable</div>
+          <div className="text-slate-100 font-semibold">Projects unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{projectsData.reason}</div>
         </div>
       ) : projectsData.projects.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No projects configured</div>
+          <div className="text-slate-100 font-semibold">No projects configured</div>
           <div className="text-slate-400 text-sm mt-1">Add projects in .clawdbot/config.json.</div>
         </div>
       ) : visibleProjects.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No project summary for this filter</div>
+          <div className="text-slate-100 font-semibold">No project summary for this filter</div>
           <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
         </div>
       ) : (
@@ -1309,7 +1333,7 @@ export default function Home() {
                 <div key={p.id} className="card">
                   <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-3">
                     <div className="min-w-0">
-                      <div className="text-white text-lg font-semibold truncate">{p.name || p.id}</div>
+                      <div className="text-slate-100 text-lg font-semibold truncate">{p.name || p.id}</div>
                       <div className="text-slate-500 text-xs mt-1 truncate">projectId: {p.id}{p.repoRelative ? ` • repo: ${p.repoRelative}` : ''}</div>
                     </div>
 
@@ -1332,7 +1356,7 @@ export default function Home() {
                   {(running.length > 0 || needs.length > 0) && (
                     <div className="mt-4 grid grid-cols-1 xl:grid-cols-2 gap-3">
                       <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
-                        <div className="text-white font-semibold">Running</div>
+                        <div className="text-slate-100 font-semibold">Running</div>
                         {running.length === 0 ? (
                           <div className="text-slate-400 text-sm mt-2">None</div>
                         ) : (
@@ -1356,7 +1380,7 @@ export default function Home() {
                       </div>
 
                       <div className="bg-slate-950/30 border border-slate-700 rounded-lg p-3">
-                        <div className="text-white font-semibold">Needs attention</div>
+                        <div className="text-slate-100 font-semibold">Needs attention</div>
                         {needs.length === 0 ? (
                           <div className="text-slate-400 text-sm mt-2">None</div>
                         ) : (
@@ -1383,7 +1407,7 @@ export default function Home() {
                   )}
 
                   <div className="mt-4">
-                    <div className="text-white font-semibold">Project context</div>
+                    <div className="text-slate-100 font-semibold">Project context</div>
                     <div className="text-slate-500 text-xs mt-1">Pulled from README/AppStoreAssets and (optionally) .clawdbot/projects vault files.</div>
 
                     {p.docs.length === 0 ? (
@@ -1414,14 +1438,14 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Global Skills</div>
+          <div className="text-slate-100 text-lg font-semibold">Global Skills</div>
           <div className="text-slate-500 text-xs">Filesystem-driven skill inventory across workspace/shared/bundled sources.</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
       </div>
 
       <div className="card">
-        <div className="text-white font-semibold">Precedence Rules</div>
+        <div className="text-slate-100 font-semibold">Precedence Rules</div>
         <div className="text-slate-400 text-sm mt-1">
           Active skill resolution uses <span className="text-slate-200">workspace {'>'} shared {'>'} bundled</span>.
           Higher-precedence skills override lower-precedence versions with the same name.
@@ -1430,12 +1454,12 @@ export default function Home() {
 
       {!globalSkillsData ? (
         <div className="card">
-          <div className="text-white font-semibold">Global skills unavailable</div>
+          <div className="text-slate-100 font-semibold">Global skills unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !globalSkillsData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Global skills unavailable</div>
+          <div className="text-slate-100 font-semibold">Global skills unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{globalSkillsData.reason}</div>
         </div>
       ) : (
@@ -1503,12 +1527,12 @@ export default function Home() {
 
           {globalSkillsData.skills.length === 0 ? (
             <div className="card">
-              <div className="text-white font-semibold">No skills detected</div>
+              <div className="text-slate-100 font-semibold">No skills detected</div>
               <div className="text-slate-400 text-sm mt-1">No valid `SKILL.md` files were found in the configured roots.</div>
             </div>
           ) : filteredGlobalSkills.length === 0 ? (
             <div className="card">
-              <div className="text-white font-semibold">No matching skills</div>
+              <div className="text-slate-100 font-semibold">No matching skills</div>
               <div className="text-slate-400 text-sm mt-1">Try broadening the search or filters.</div>
             </div>
           ) : (
@@ -1555,7 +1579,7 @@ export default function Home() {
 
           {globalSkillsData.invalid.length > 0 && (
             <div className="card">
-              <div className="text-white font-semibold">Invalid skill folders</div>
+              <div className="text-slate-100 font-semibold">Invalid skill folders</div>
               <div className="text-slate-400 text-xs mt-1">These entries are listed but skipped from active skill resolution.</div>
               <div className="mt-3 space-y-2">
                 {globalSkillsData.invalid.map((item) => (
@@ -1579,7 +1603,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <div>
-          <div className="text-white text-lg font-semibold">Tasks</div>
+          <div className="text-slate-100 text-lg font-semibold">Tasks</div>
           <div className="text-slate-500 text-xs">Swarm tasks from .clawdbot/active-tasks.json • click a task for details</div>
         </div>
 
@@ -1607,18 +1631,18 @@ export default function Home() {
 
       {!swarmData ? (
         <div className="card">
-          <div className="text-white font-semibold">Tasks unavailable</div>
+          <div className="text-slate-100 font-semibold">Tasks unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !swarmData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Tasks unavailable</div>
+          <div className="text-slate-100 font-semibold">Tasks unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{swarmData.reason}</div>
         </div>
       ) : (
         <>
           <div className="card">
-            <div className="text-white font-semibold">Filters</div>
+            <div className="text-slate-100 font-semibold">Filters</div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
               <div>
                 <label className="text-slate-500 text-xs block mb-1">Agent</label>
@@ -1670,7 +1694,7 @@ export default function Home() {
           </div>
 
           <div className="card">
-            <div className="text-white font-semibold">Per-project counts</div>
+            <div className="text-slate-100 font-semibold">Per-project counts</div>
             <div className="mt-3 overflow-x-auto">
               <table className="min-w-[760px] w-full text-xs">
                 <thead className="text-slate-500">
@@ -1704,7 +1728,7 @@ export default function Home() {
           </div>
 
           <div className="card">
-            <div className="text-white font-semibold">Helper commands</div>
+            <div className="text-slate-100 font-semibold">Helper commands</div>
             <div className="text-slate-500 text-xs mt-1">Orchestrator helpers: route + retry</div>
             <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2">
               {Object.entries(swarmData.orchestrator.notifications).map(([kind, cfg]) => (
@@ -1801,7 +1825,7 @@ export default function Home() {
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-5 gap-4">
               {(['queued', 'running', 'needs_attention', 'done', 'failed'] as const).map((col) => (
                 <div key={col} className="card">
-                  <div className="text-white font-semibold">{col}</div>
+                  <div className="text-slate-100 font-semibold">{col}</div>
                   <div className="mt-4 space-y-3">
                     {taskBuckets[col].length === 0 && <div className="text-slate-400 text-sm">None</div>}
                     {taskBuckets[col].map((t) => (
@@ -1901,7 +1925,7 @@ export default function Home() {
           >
             <div className="px-4 py-3 border-b border-slate-700 flex items-center justify-between">
               <div className="min-w-0">
-                <div className="text-white font-semibold truncate">Task details</div>
+                <div className="text-slate-100 font-semibold truncate">Task details</div>
                 <div className="text-slate-400 text-xs truncate">{selectedTaskId}</div>
               </div>
               <button
@@ -1953,7 +1977,7 @@ export default function Home() {
 
                   {taskDetails.task.checks && (
                     <div className="card">
-                      <div className="text-white font-semibold">Done-gate checks</div>
+                      <div className="text-slate-100 font-semibold">Done-gate checks</div>
                       <div className="mt-3 grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-2 text-xs">
                         {Object.entries(taskDetails.task.checks).map(([key, value]) => (
                           <div key={key} className="bg-slate-950/40 border border-slate-700 rounded-lg p-2">
@@ -1968,7 +1992,7 @@ export default function Home() {
                   <div className="card space-y-3">
                     <div className="flex items-center justify-between gap-3">
                       <div>
-                        <div className="text-white font-semibold">tmux attach</div>
+                        <div className="text-slate-100 font-semibold">tmux attach</div>
                         <div className="text-slate-400 text-xs mt-1">{taskDetails.tmuxAttachCommand || 'No tmux session available.'}</div>
                       </div>
                       <button
@@ -1981,7 +2005,7 @@ export default function Home() {
                     </div>
                     {copiedText && <div className="text-slate-500 text-xs mt-2">Copied.</div>}
                     <div className="pt-2 border-t border-slate-700">
-                      <div className="text-white font-semibold">Helper commands</div>
+                      <div className="text-slate-100 font-semibold">Helper commands</div>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           disabled={helperActionLoading || !['failed', 'needs_attention'].includes(taskDetails.task.status)}
@@ -2013,7 +2037,7 @@ export default function Home() {
                   </div>
 
                   <div className="card">
-                    <div className="text-white font-semibold">Session log (local-only, redacted)</div>
+                    <div className="text-slate-100 font-semibold">Session log (local-only, redacted)</div>
                     {taskDetails.log.available ? (
                       <>
                         <div className="text-slate-500 text-xs mt-1">
@@ -2040,7 +2064,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Jobs</div>
+          <div className="text-slate-100 text-lg font-semibold">Jobs</div>
           <div className="text-slate-500 text-xs">Cron jobs (OpenClaw scheduler) — not the same as swarm tasks</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -2048,22 +2072,22 @@ export default function Home() {
 
       {!cronData ? (
         <div className="card">
-          <div className="text-white font-semibold">Jobs unavailable</div>
+          <div className="text-slate-100 font-semibold">Jobs unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !cronData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Jobs unavailable</div>
+          <div className="text-slate-100 font-semibold">Jobs unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{cronData.reason}</div>
         </div>
       ) : cronData.jobs.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No cron jobs configured</div>
+          <div className="text-slate-100 font-semibold">No cron jobs configured</div>
           <div className="text-slate-400 text-sm mt-1">You can add jobs via OpenClaw cron. This panel will populate automatically.</div>
         </div>
       ) : filteredJobs.length === 0 ? (
         <div className="card">
-          <div className="text-white font-semibold">No jobs match this project filter</div>
+          <div className="text-slate-100 font-semibold">No jobs match this project filter</div>
           <div className="text-slate-400 text-sm mt-1">Selected project: {selectedProject}</div>
         </div>
       ) : (
@@ -2122,7 +2146,7 @@ export default function Home() {
 
           {selectedJobId && (
             <div className="card">
-              <div className="text-white font-semibold">Job runs</div>
+              <div className="text-slate-100 font-semibold">Job runs</div>
               <div className="text-slate-500 text-xs mt-1">jobId: {selectedJobId}</div>
               {!cronRuns ? (
                 <div className="text-slate-400 text-sm mt-2">No runs payload.</div>
@@ -2153,7 +2177,7 @@ export default function Home() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div>
-          <div className="text-white text-lg font-semibold">Agents</div>
+          <div className="text-slate-100 text-lg font-semibold">Agents</div>
           <div className="text-slate-500 text-xs">Recent OpenClaw sessions grouped by agentId</div>
         </div>
         <div className="text-slate-500 text-xs">auto-refreshes every 10s</div>
@@ -2161,26 +2185,26 @@ export default function Home() {
 
       {!agentsData ? (
         <div className="card">
-          <div className="text-white font-semibold">Agents unavailable</div>
+          <div className="text-slate-100 font-semibold">Agents unavailable</div>
           <div className="text-slate-400 text-sm mt-1">No payload yet.</div>
         </div>
       ) : !agentsData.available ? (
         <div className="card">
-          <div className="text-white font-semibold">Agents unavailable</div>
+          <div className="text-slate-100 font-semibold">Agents unavailable</div>
           <div className="text-slate-400 text-sm mt-1">{agentsData.reason}</div>
         </div>
       ) : (
         <div className="space-y-3">
           {groupedAgentSessions.length === 0 ? (
             <div className="card">
-              <div className="text-white font-semibold">No recent sessions</div>
+              <div className="text-slate-100 font-semibold">No recent sessions</div>
               <div className="text-slate-400 text-sm mt-1">OpenClaw returned zero recent sessions.</div>
             </div>
           ) : (
             groupedAgentSessions.map((g) => (
               <div key={g.agentId} className="card">
                 <div className="flex items-center justify-between">
-                  <div className="text-white font-semibold">{g.agentId}</div>
+                  <div className="text-slate-100 font-semibold">{g.agentId}</div>
                   <div className="text-slate-500 text-xs">{g.sessions.length} session(s)</div>
                 </div>
 
@@ -2238,7 +2262,7 @@ export default function Home() {
             <header className="sticky top-0 z-50 border-b border-slate-800 bg-slate-950/80 backdrop-blur">
               <div className="px-4 md:px-6 py-4 flex items-center justify-between gap-4">
                 <div className="min-w-0">
-                  <div className="text-white text-lg md:text-xl font-semibold tracking-wide truncate">Mission Center</div>
+                  <div className="text-slate-100 text-lg md:text-xl font-semibold tracking-wide truncate">Mission Center</div>
                   <div className="text-slate-400 text-xs mt-0.5 truncate">Task-first dashboard</div>
                 </div>
 
