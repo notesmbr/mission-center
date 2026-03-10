@@ -78,6 +78,7 @@ export type TraderStatusSnapshot = {
   strategyParams: TraderStrategyParamsSnapshot
   aiStrategist: TraderAiStrategistSnapshot
   products: string[]
+  entryProducts: string[]
   lastRunTs: string | null
   lastError: string | null
   killSwitchEnabled: boolean
@@ -242,7 +243,10 @@ function parseOpenPositions(state: any): TraderOpenPosition[] {
       if (!product || qty === null || qty === 0) continue
       const entryPrice = pickFirstNumber(item?.entryPrice, item?.entry_price, item?.avgEntryPrice, item?.avg_entry_price)
       const markPrice = pickFirstNumber(item?.markPrice, item?.mark_price, prices?.[product], item?.price)
-      const unrealizedPnlUsd = pickFirstNumber(item?.unrealizedPnlUsd, item?.unrealized_pnl_usd, item?.unrealizedPnl, item?.pnlUsd)
+      let unrealizedPnlUsd = pickFirstNumber(item?.unrealizedPnlUsd, item?.unrealized_pnl_usd, item?.unrealizedPnl, item?.pnlUsd)
+      if (unrealizedPnlUsd === null && entryPrice !== null && markPrice !== null) {
+        unrealizedPnlUsd = qty * (markPrice - entryPrice)
+      }
       positions.push({
         product,
         qty,
@@ -266,13 +270,16 @@ function parseOpenPositions(state: any): TraderOpenPosition[] {
     const meta = openMeta?.[product]
     const entryPrice = pickFirstNumber(rawPos?.entry_price, rawPos?.entryPrice, rawPos?.avg_entry_price, meta?.entry_price, meta?.entryPrice)
     const markPrice = pickFirstNumber(rawPos?.mark_price, rawPos?.markPrice, prices?.[product])
-    const unrealizedPnlUsd = pickFirstNumber(
+    let unrealizedPnlUsd = pickFirstNumber(
       rawPos?.unrealized_pnl_usd,
       rawPos?.unrealizedPnlUsd,
       rawPos?.pnl_usd,
       meta?.unrealized_pnl_usd,
       meta?.unrealizedPnlUsd,
     )
+    if (unrealizedPnlUsd === null && entryPrice !== null && markPrice !== null) {
+      unrealizedPnlUsd = qty * (markPrice - entryPrice)
+    }
 
     positions.push({
       product,
@@ -397,6 +404,12 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
     ? state.products.map((p: unknown) => sanitizeProduct(p)).filter((p: string | null): p is string => Boolean(p))
     : []
 
+  const entryProducts = Array.isArray(state?.entry_products)
+    ? state.entry_products.map((p: unknown) => sanitizeProduct(p)).filter((p: string | null): p is string => Boolean(p))
+    : Array.isArray(state?.entryProducts)
+      ? state.entryProducts.map((p: unknown) => sanitizeProduct(p)).filter((p: string | null): p is string => Boolean(p))
+      : []
+
   const openPositions = parseOpenPositions(state)
   const inferredProducts = new Set<string>(products)
   for (const position of openPositions) inferredProducts.add(position.product)
@@ -460,6 +473,7 @@ export function readTraderStatusSnapshot(): TraderStatusSnapshot {
     strategyParams,
     aiStrategist,
     products: Array.from(inferredProducts).sort(),
+    entryProducts,
     lastRunTs:
       toIsoTimestamp(state?.ts ?? state?.timestamp ?? state?.lastRunTs ?? state?.last_run_ts ?? state?.updatedAt) ||
       new Date(stateStat.mtimeMs).toISOString(),
@@ -487,8 +501,8 @@ export function parseTradeRow(raw: any): TraderTradeRow | null {
     product,
     side: normalizeTradeSide(raw),
     qtyBase: pickFirstNumber(raw?.qty_base, raw?.qty, raw?.quantity, raw?.size, raw?.amount),
-    entryPrice: pickFirstNumber(raw?.entry_price, raw?.entryPrice),
-    exitPrice: pickFirstNumber(raw?.exit_price, raw?.exitPrice),
+    entryPrice: pickFirstNumber(raw?.entry_probability, raw?.entryProbability, raw?.entry_price, raw?.entryPrice),
+    exitPrice: pickFirstNumber(raw?.exit_probability, raw?.exitProbability, raw?.exit_price, raw?.exitPrice),
     pnlUsd: pickFirstNumber(raw?.pnl_usd, raw?.pnlUsd, raw?.realized_pnl_usd, raw?.realizedPnlUsd, raw?.pnl),
     pnlPct: pickFirstNumber(raw?.pnl_pct, raw?.pnlPct),
     openTs: toIsoTimestamp(raw?.open_ts ?? raw?.openTs),

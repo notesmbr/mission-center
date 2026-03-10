@@ -21,6 +21,7 @@ type TraderStatusResponse =
       strategyParams: TraderStrategyParamsSnapshot
       aiStrategist: TraderAiStrategistSnapshot
       products: string[]
+      entryProducts: string[]
       lastRunTs: string | null
       lastError: string | null
       killSwitchEnabled: boolean
@@ -85,6 +86,7 @@ export async function buildTraderStatusResponse(
         strategyParams: snapshot.strategyParams,
         aiStrategist: snapshot.aiStrategist,
         products: snapshot.products,
+        entryProducts: snapshot.entryProducts,
         lastRunTs: snapshot.lastRunTs,
         lastError: snapshot.lastError,
         killSwitchEnabled: snapshot.killSwitchEnabled,
